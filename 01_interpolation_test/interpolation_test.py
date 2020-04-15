@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.interpolate as si
+import scipy.ndimage
 
 DATA_LABEL = "02_test2"
 HIRES_LABEL = "03_fine"
@@ -57,14 +58,49 @@ hires["CFe"] = cool_fine["CFe"]
 # TODO: Get maximum, minimum, median, mean error
 # TODO: Plot interpolated vs fine result
 
-interpolated = si.griddata(
-    points=data.loc[:, ("Iron", "hden", "temp")],
-    values=data["CFe"],
-    xi=hires.loc[:, ("Iron", "hden", "temp")],
-    method="nearest"
-)
+# interpolated = si.griddata(
+#     points=data.loc[:, ("Iron", "hden", "temp")],
+#     values=data["CFe"],
+#     xi=hires.loc[:, ("Iron", "hden", "temp")],
+#     method="linear"
+# )
 
-hires["CFe_interp"] = interpolated
+# # radial based function interpolation
+# RBF_interpolator = si.Rbf(
+#     data["Iron"],
+#     data["hden"],
+#     data["temp"],
+#     data["CFe"],
+#     function="thin_plate"
+# )
+#
+# interpolated = RBF_interpolator(
+#     hires["Iron"],
+#     hires["hden"],
+#     hires["temp"]
+# )
+#
+# hires["CFe_interp"] = interpolated
+
+# Try ignoring Iron abundance (use same grid as coarse) -> -4.6 and -4.4
+hires["CFe_interp"] = np.nan
+for fe_abun in [-4.4, -4.6]:
+    SBS_interpolator = si.SmoothBivariateSpline(
+        data[data["Iron"] == fe_abun].loc[:, "hden"],
+        data[data["Iron"] == fe_abun].loc[:, "temp"],
+        data[data["Iron"] == fe_abun].loc[:, "CFe"],
+    )
+
+    interpolated = SBS_interpolator.ev(
+        hires[hires["Iron"] == fe_abun].loc[:, "hden"],
+        hires[hires["Iron"] == fe_abun].loc[:, "hden"],
+    )
+
+    print(interpolated.shape)
+    print(hires.shape)
+    print(hires.loc[hires["Iron"] == fe_abun, "CFe_interp"].shape)
+    hires.loc[hires["Iron"] == fe_abun, "CFe_interp"] = interpolated
+
 
 print(hires)
 
