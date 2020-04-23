@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import scipy.interpolate as si
 import scipy.ndimage
 
-DATA_LABEL = "02_test2"
-HIRES_LABEL = "03_fine"
+DATA_LABEL = "06_C6"
+HIRES_LABEL = "07_C7_fine"
 
 # Load rough data to interpolate
 data = pd.read_csv(
@@ -97,7 +97,7 @@ for i in range(matrix_interp_1.shape[0]):
         dim_hden,
         matrix_interp_1[i],
         axis=0,
-        kind="cubic"
+        kind="linear"
     )
 
     nh_interps.append(nh_interp)
@@ -184,8 +184,8 @@ for i, hden in enumerate(pd.unique(hires["hden"])):
     #plt.ylim(min(hires.loc[:, ("CFe", "CFe_interp")]), max(hires.loc[:, ("CFe", "CFe_interp")]))
     #plt.ylim(-80, -50)
     plt.ylabel("Cooling")
-    plt.show()
-    #plt.savefig(RUN_LABEL + "_" + str(i) + "_nH" + str(hden).replace(".", "_") + ".png")
+    #plt.show()
+    plt.savefig(DATA_LABEL + "_" + str(i) + "_nH" + str(hden).replace(".", "_") + ".png")
     plt.close()
 
 

@@ -363,7 +363,8 @@ def combine_6spectra(zin, Phins, Phios, PhiT6, PhiT7, PhiT8, base_name='cloudy_i
     ax.set_xlim(2.0e-3, 1.0e4)
     ax.legend(loc=3, fontsize=12, frameon=False, labelspacing=0.6, borderaxespad=0.5)
     #pdb.set_trace()
-    plt.savefig(base_name + '.png')
+    #plt.savefig(base_name + '.png')
+    plt.show()
     plt.close()
 
     print("Writing cloudy file...")
@@ -376,13 +377,13 @@ def combine_6spectra(zin, Phins, Phios, PhiT6, PhiT7, PhiT8, base_name='cloudy_i
     outfile.write('# set metallicity\n')
     outfile.write('metals 0 # This does nothing... scales solar abundances * 1\n')
     outfile.write('# Vary Iron\n')
-    outfile.write('element abundance iron -4.55 vary\n')
-    outfile.write('grid -4.6 -4.4 0.1 ncpus 8\n')
+    outfile.write('element abundance iron -4.55 #vary\n')
+    outfile.write('#grid -5 -4 0.2 ncpus 8\n')
     outfile.write('# next 4 commands vary n and Te\n')
     outfile.write('hden -2 vary\n')
-    outfile.write('grid -4.0 -1.0 0.2\n')
+    outfile.write('grid -4.0 4.0 1\n')
     outfile.write('constant temperature 5 vary\n')
-    outfile.write('grid 5.0 7.0 0.1\n')
+    outfile.write('grid 4.0 8.0 0.1\n')
     outfile.write('# must stop this constant Te model\n')
     outfile.write('stop zone 1\n')
     outfile.write('# print the results of the last iteration only\n')
@@ -417,7 +418,25 @@ def combine_6spectra(zin, Phins, Phios, PhiT6, PhiT7, PhiT8, base_name='cloudy_i
 #############################################################################################################
 
 # example of combined UVB+LPF spectrum together with the corresponding Cloudy input
-combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, 21.5, base_name='cloudy_inputs/03_fine')
+#combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, 21.5, base_name='cloudy_inputs/03_fine')
+
+for i in [-3, -2, -1]:
+    combine_6spectra(0., 10**i, 5.0e8, 18.5, 19.5, 21.5, base_name='cloudy_inputs/10_rad_test'+str(i))
+
+# for x in np.linspace(-4, 1.0, 5):
+#     combine_6spectra(0., 10**x, 5.0e8, 18.5, 19.5, 21.5, base_name='cloudy_inputs/03_fine')
+
+# for x in np.linspace(7, 9, 5):
+#     combine_6spectra(0., 2.0e-2, 10**x, 18.5, 19.5, 21.5, base_name='cloudy_inputs/03_fine')
+
+# for x in np.linspace(15, 22, 5):
+#     combine_6spectra(0., 2.0e-2, 5.0e8, x, 19.5, 21.5, base_name='cloudy_inputs/03_fine')
+
+# for x in np.linspace(16, 23, 5):
+#     combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, x, 21.5, base_name='cloudy_inputs/03_fine')
+
+#for x in [15, 22]: #np.linspace(18, 23, 5):
+#    combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, x, base_name='cloudy_inputs/03_fine')
 
 # make_fig1_in_obreja2019()
 

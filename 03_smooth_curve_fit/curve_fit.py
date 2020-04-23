@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.interpolate as si
 import scipy.ndimage
+from scipy.optimize import curve_fit
 
 DATA_LABEL = "02_test2"
 HIRES_LABEL = "03_fine"
@@ -54,8 +55,6 @@ hires["Ctot"] = cool_fine["Ctot"]
 hires["CFe"] = cool_fine["CFe"]
 
 
-
-
 # convert to multidimensional block of data (from table)
 # there is probably a much smarter way of doing this with multi indices...
 # 1. dimensions
@@ -75,7 +74,54 @@ hires["CFe"] = np.log(hires["CFe"])
 data["CFe"] = np.log(data["CFe"])
 
 
+# for i, hden in enumerate(hires["hden"].unique()):
+#     plt.plot(
+#         hires.loc[(hires["iron"] == -4.4) & (hires["hden"] == hden), "temp"],
+#         hires.loc[(hires["iron"] == -4.4) & (hires["hden"] == hden), "CFe"],
+#         label=hden
+#     )
+#
+# plt.title("Dependence on T at different hden")
+# # plt.legend()
+# plt.show()
+#
+# for i, temp in enumerate(hires["temp"].unique()):
+#     plt.plot(
+#         hires.loc[(hires["iron"] == -4.4) & (hires["temp"] == temp), "hden"],
+#         hires.loc[(hires["iron"] == -4.4) & (hires["temp"] == temp), "CFe"],
+#         label=temp
+#     )
+#
+# plt.title("Dependence on hden at different T")
+# # plt.legend()
+# plt.show()
+# exit()
 
+
+def func_iron(x, m, t):
+    """
+    linear function for fitting iron abundance -> cooling function
+    """
+    return m*x + t
+
+
+def func_hden(x, m, t, a, b, c):
+    """
+    linear function + gaussian for "hump"
+    """
+    return m*x + t + a*np.exp(- (x-b)**2 / (2*c**2))
+
+
+def func_temp(x, a, b, c, d, e, f):
+    """
+    simple 5th order polynomial
+    """
+    return a + b*x + c*x**2 + d*x**3 + e*x**4 + f*x**5
+
+def get_func_temp(a, b, c, d, e, f):
+    def func_temp(x):
+        return a + b*x + c*x**2 + d*x**3 + e*x**4 + f*x**5
+    return func_temp
 
 # Interpolate along iron (linear)
 # for j, hden in enumerate(dim_hden):
@@ -93,11 +139,10 @@ print(matrix_interp_1.shape)    # -> (1008, 9, 21): 1008 planes of size 9x21. No
 
 nh_interps = []
 for i in range(matrix_interp_1.shape[0]):
-    nh_interp = si.interp1d(
+    nh_interp_param, _ = curve_fit(
+        func_hden,
         dim_hden,
-        matrix_interp_1[i],
-        axis=0,
-        kind="cubic"
+        matrix_interp_1
     )
 
     nh_interps.append(nh_interp)
@@ -114,48 +159,18 @@ for i, interp_func in enumerate(nh_interps):
 # matrix_interp_2 is now condense to a line that has to be interpolated fo reach data point
 temp_interps = []
 for i in range(matrix_interp_2.shape[0]):
-    temp_interp = si.interp1d(
+    temp_interp_param, _ = curve_fit(
+        func_temp,
         dim_temp,
-        matrix_interp_2[i],
-        axis=0, # redundant
-        kind="cubic"
+        matrix_interp_2[i]
     )
-
+    temp_interp = get_func_temp(*temp_interp_param)
     temp_interps.append(temp_interp)
 
 interpolated = np.zeros(len(hires.index))
 for i, interp_func in enumerate(temp_interps):
     interpolated[i] = interp_func(hires.loc[i, "temp"])
 
-print(interpolated)
-print(interpolated.shape)
-print()
-
-########################################################################################################################
-
-# interpolated = si.griddata(
-#     points=data.loc[:, ("iron", "hden", "temp")],
-#     values=data["CFe"],
-#     xi=hires.loc[:, ("iron", "hden", "temp")],
-#     method="linear"
-# )
-
-# # radial based function interpolation
-# RBF_interpolator = si.Rbf(
-#     data["iron"],
-#     data["hden"],
-#     data["temp"],
-#     data["CFe"],
-#     function="thin_plate"
-# )
-#
-# interpolated = RBF_interpolator(
-#     hires["iron"],
-#     hires["hden"],
-#     hires["temp"]
-# )
-
-########################################################################################################################
 
 hires["CFe_interp"] = interpolated
 hires["CFe_diff"] = hires["CFe"] - hires["CFe_interp"]
