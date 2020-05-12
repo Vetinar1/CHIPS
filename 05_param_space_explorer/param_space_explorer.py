@@ -20,6 +20,26 @@ def get_test_point(x, y):
     return np.cos(x*y) ** 2
 
 
+def complex_sine(x, y):
+    return np.sin(x + y)
+
+
+def wedge(x, y):
+    return np.clip(1-2*np.abs(x), a_min=0, a_max=1)
+
+
+# breaks the algorithm (doesnt terminate)
+def theta(x, y):
+    return np.array(x > 0).astype(int)
+
+
+def exp2d(x, y):
+    return np.exp(x*y)
+
+
+
+
+
 def IDW(points, values, x, exp=1):
     """
     Simple inverse distance weighting interpolation.
@@ -856,7 +876,7 @@ def explore_parameter_space_delaunay_KDE(
             idw_points = b[simplex_indices == -1].copy()
             del_points = b[simplex_indices != -1].copy()
 
-            # Cutting out indices -1 - yes, i shouldnt do this in place
+            # Cutting out indices -1
             simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
             simplices = tri.simplices[simplex_indices_cleaned]
 
@@ -953,7 +973,7 @@ def explore_parameter_space_delaunay_KDE(
         print(round(time4 - time3, 2), "to plot scatterplot")
 
         if max(raw_diffs[(~oob_mask), -1]) < max_diff and primary_condition_fulfilled:
-            return
+            return points
 
         # Construct kernel density estimator weighed with differences, draw new samples from it
         # Need to transpose our input first because scipy.stats.gaussian_kde is weird
@@ -1014,18 +1034,124 @@ def explore_parameter_space_delaunay_KDE(
         print()
 
 
+def test_interp_2d(points, analytic_fct, grid_side=100):
+    print("\n==============================")
+    print("Testing Interpolation")
+    print("\n==============================")
+    print()
+    print("Testing at", grid_side**2, "evenly spaced points")
+
+    tri = spatial.Delaunay(
+        points[:, :-1]
+    )
+
+    x, y = np.meshgrid(
+        np.arange(-2, 2, 4/grid_side),
+        np.arange(-2, 2, 4/grid_side)
+    )
+
+    x = x.flatten()
+    y = y.flatten()
+
+    x = np.reshape(x, (x.shape[0], 1))
+    y = np.reshape(y, (y.shape[0], 1))
+
+    test_points = np.hstack((x, y))
+
+    # number of dimensions; subtract one because of value
+    n = points.shape[1] - 1
+
+    simplex_indices = tri.find_simplex(test_points)
+
+    out_points  = test_points[simplex_indices == -1].copy()
+    test_points = test_points[simplex_indices != -1].copy()
+
+    print("Number of points outside of triangulation area: ", out_points.shape[0])
+
+    simplex_indices = simplex_indices[simplex_indices != -1]
+    simplices = tri.simplices[simplex_indices]
+
+    # transforms of the points that are within triangles
+    transforms = tri.transform[simplex_indices]
+
+    # This generalisation of the version in explore_parameter_space_delaunay is shamelessly copied from
+    # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
+    bary = np.einsum('ijk,ik->ij', transforms[:, :n, :n], test_points - transforms[:, n, :])
+
+    # the barycentric coordinates obtained this way are not complete. obtain last linearly dependent coordinate:
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+
+    # Make space for interpolated values
+    test_points = np.hstack(
+        (
+            test_points,
+            np.reshape(np.zeros(test_points.shape[0]), (test_points.shape[0], 1))
+        )
+    )
+
+    for i in range(test_points.shape[0]):
+        # Overwriting column of 0s we just created
+        test_points[i, -1] = np.inner(points[simplices[i], -1], weights[i])
+
+    # Make yet another column with analytic values
+    test_points = np.hstack(
+        (
+            test_points,
+            np.reshape(analytic_fct(test_points[:, 0], test_points[:, 1]), (test_points.shape[0], 1))
+        )
+    )
+
+    diffs = np.abs(test_points[:, -1] - test_points[:, -2])
+
+    print("Average difference:", np.average(diffs))
+    print("Standard deviation of averages:", np.std(diffs))
+    print("Smallest / Largest difference:", np.min(diffs), "/", np.max(diffs))
+
+    plt.title("Interpolation evaluation - differences")
+    plt.hist(diffs, bins=10)
+    plt.show()
+    plt.close()
+
+    plt.title("Interpolation evaluation - analytic values")
+    plt.xlim(-2, 2)
+    plt.ylim(-2, 2)
+    plt.scatter(test_points[:, 0], test_points[:, 1], c=test_points[:, -1], marker=".", s=0.5, cmap="jet")
+    plt.colorbar(cmap="jet")
+    #plt.clim(0, 0.2)
+    plt.show()
+    plt.close()
+
+    plt.title("Interpolation evaluation - interp values")
+    plt.xlim(-2, 2)
+    plt.ylim(-2, 2)
+    plt.scatter(test_points[:, 0], test_points[:, 1], c=test_points[:, -2], marker=".", s=0.5, cmap="jet")
+    plt.colorbar(cmap="jet")
+    #plt.clim(0, 0.2)
+    plt.show()
+    plt.close()
+
+    plt.title("Interpolation evaluation - differences")
+    plt.xlim(-2, 2)
+    plt.ylim(-2, 2)
+    plt.scatter(test_points[:, 0], test_points[:, 1], c=diffs, marker=".", s=0.5, cmap="jet")
+    plt.colorbar(cmap="jet")
+    #plt.clim(0, 0.2)
+    plt.show()
+    plt.close()
 
 
 
 
 
 
-explore_parameter_space_delaunay_KDE(
+
+
+points = explore_parameter_space_delaunay_KDE(
     [
         [-2, 2, 11],
         [-2, 2, 11]
     ],
-    get_test_point,
+    exp2d,
     threshold=0.01,
     point_threshold=0.1,
     random_new_points=100,
@@ -1035,7 +1161,7 @@ explore_parameter_space_delaunay_KDE(
 )
 
 
-
+test_interp_2d(points, exp2d, grid_side=100)
 
 
 
