@@ -59,8 +59,8 @@ if point_generation == "grid":
         (points, get_test_point(x, y))
     )
 elif point_generation == "random":
-    x = 4.2*np.random.random(400) - 2.1 # Again go over edges
-    y = 4.2*np.random.random(400) - 2.1
+    x = 4.2*np.random.random(1000) - 2.1 # Again go over edges
+    y = 4.2*np.random.random(1000) - 2.1
 
     x = np.reshape(x, (x.shape[0], 1))
     y = np.reshape(y, (y.shape[0], 1))
@@ -103,7 +103,7 @@ y = np.reshape(y, (y.shape[0], 1))
 fine_points = np.hstack((x, y))
 values = []
 
-interp_method = "delaunay"
+interp_method = "IDW"
 
 if interp_method == "delaunay":
     for i, p in enumerate(fine_points):
