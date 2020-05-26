@@ -16,7 +16,7 @@ def prod(iterable):
     return prod
 
 
-def get_test_point(x, y):
+def cos2d_squared(x, y):
     return np.cos(x*y) ** 2
 
 
@@ -1034,10 +1034,240 @@ def explore_parameter_space_delaunay_KDE(
         print()
 
 
+def explore_parameter_space_delaunay_uniform(
+        dimensions,
+        get_new_point,
+        threshold=0.05,
+        point_threshold=0.05,
+        random_new_points=1000,
+        sample_multiplier=4,
+        max_diff=None,
+        number_of_partitions=5,
+        max_iterations=30
+):
+    """
+    This variant partitions the points into n partitions each step, then successivley triangulates using all
+    partitions except one, and checks the points in the remaining partition.
+    New points are sampled uniformly (in barycentric coordinates) in the triangle of their "parent" points.
+    This version does not actually require a kd tree.
+
+    Hacky proof of concept implementation
+
+    Note: max_diff parameter is broken in this one, dont know why
+
+    just for testing purposes!
+
+    :param dimensions:      List of list
+                            [[start, stop, number], ...}
+    :param get_new_point:   Function to get new point in space. Must match dimensions
+    :param threshold:       Relative maximum threshold for points to differ from analytic RIGHT NOW ABSOLUTE
+    :param point_threshold: Relative number of points who may be over threshold for interpolation to quit
+    :param random_new_points: How many random new points to add each iteration to avoid "local optimum"
+    :param sample_multiplier:   For each point not fulfilling the conditions, sample_multiplier new points will be
+                                drawn (not necessarily in the vicinity of specific points)
+    :param max_diff:        Maximum difference any point may have from an analytic
+    :param number_of_partitions:    Number of partitions to divide the dataset into each iteration
+                                    Equivalent to number of delaunay triangulations that are done each iteration
+    :param max_iterations:  Maximum number of iterations
+    :return:
+    """
+    # Establish initial grid
+    axes = []
+    shape = []
+    volume = 1
+    for dim in dimensions:
+        volume *= abs(dim[0] - dim[1])
+        axes.append(np.linspace(*dim))
+        shape.append(dim[2])
+
+    # Shape: N points, M coordinates + 1 value
+    points = np.zeros((prod(shape), len(shape)+1))
+
+    for i, comb in enumerate(itertools.product(*axes)):
+        points[i] = np.array([*comb, get_new_point(*comb)])
+
+    finished = False
+    count = 0
+
+    while not finished:
+        count += 1
+        print(count)
+        point_count = points.shape[0]
+        print("Points this iteration:", point_count)
+        thresh_points = 0
+
+
+        time1 = time.time()
+
+        points[:, -1] = get_new_point(points[:, 0], points[:, 1])
+        # A copy of points that will hold the differences instead of values
+        # Inefficient but not nearly as inefficient as cloudy evaluations at each point are anyway...
+        raw_diffs = points.copy()
+
+        # TODO: Find diffs here
+        outside_tri_counter = 0
+        samples = np.zeros((1, points.shape[1]))
+        for i in range(number_of_partitions):
+            mask = np.ones(points.shape[0], dtype=bool)
+            mask[i::number_of_partitions] = False
+
+            a = points[mask]    # all points EXCEPT some
+            b = points[~mask]   # only SOME of the points
+
+            tri = spatial.Delaunay(
+                a[:, :-1]
+            )
+
+            # number of dimensions; subtract one because of value
+            n = points.shape[1] - 1
+
+            simplex_indices = tri.find_simplex(b[:, :-1])
+
+            # we will deal with points outside triangulation later
+            idw_points = b[simplex_indices == -1].copy()
+            del_points = b[simplex_indices != -1].copy()
+
+            # Cutting out indices -1
+            simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
+            simplices = tri.simplices[simplex_indices_cleaned]
+
+            # transforms of the points that are within triangles
+            transforms = tri.transform[simplex_indices_cleaned]
+
+            # This generalisation of the version in explore_parameter_space_delaunay is shamelessly copied from
+            # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
+            bary = np.einsum('ijk,ik->ij', transforms[:, :n, :n], del_points[:, :-1] - transforms[:, n, :])
+
+            # the barycentric coordinates obtained this way are not complete. obtain last linearly dependent coordinate:
+            weights = np.c_[bary, 1 - bary.sum(axis=1)]
+
+
+            for j in range(del_points.shape[0]):
+                orig_value = del_points[j, -1]
+                # Attention! Overwriting previous analytic values with interpolated ones
+                del_points[j, -1] = np.inner(a[simplices[j], -1], weights[j])
+
+                if abs(del_points[j, -1] - orig_value) > threshold:
+                    if not (dimensions[0][0] < del_points[j, 0 ] < dimensions[0][1]) or not (dimensions[1][0] < del_points[j, 1] < dimensions[1][1]):
+                        continue
+                    lambda1 = np.random.random()
+                    lambda2 = np.random.random() * lambda1
+                    lambda3 = 1 - lambda1 - lambda2
+
+                    x = lambda1 * a[simplices[j, 0], 0] + lambda2 * a[simplices[j, 1], 0] + lambda3 * a[simplices[j, 2], 0]
+                    y = lambda1 * a[simplices[j, 0], 1] + lambda2 * a[simplices[j, 1], 1] + lambda3 * a[simplices[j, 2], 1]
+
+                    v = cos2d_squared(x, y)
+
+                    samples = np.vstack((samples, np.array([x, y, v])))
+
+            # Build a tree and interpolate the remaining points using IDW
+            tree = spatial.cKDTree(
+                a[:, :-1]  # exclude value column
+            )
+
+            outside_tri_counter += idw_points.shape[0]
+
+            for j, p in enumerate(idw_points):
+                # Determine neighbors of point
+                _, p_neigh = tree.query(
+                    p[:-1],
+                    4
+                )
+
+                p_neigh = list(p_neigh)  # list of indices including orig point
+                # inconsistent behavior - sometimes i is in p_neigh, sometimes not
+                if j in p_neigh:
+                    p_neigh.remove(j)  # list of indices of neighbors
+                p_neigh = points[p_neigh]  # list of points (+ values)
+
+                idw_points[j, -1] = IDW(p_neigh[:, :-1], p_neigh[:, -1], p[:-1])
+
+            # Write back into raw_diffs
+            # This strange construct is required because of how numpy handles assignment to views/multi-masking
+            raw_diffs_view = raw_diffs[~mask]
+            raw_diffs_view[simplex_indices == -1, -1] -= idw_points[:, -1]
+            raw_diffs_view[simplex_indices != -1, -1] -= del_points[:, -1]
+            raw_diffs[~mask] = raw_diffs_view
+
+
+
+        raw_diffs[:, -1] = np.abs(raw_diffs[:, -1])
+
+        time3 = time.time()
+        print(round(time3 - time1, 2), "to check interpolation")
+
+        oob_mask = np.zeros(points.shape[0], dtype=bool)
+        for i, dim in enumerate(dimensions):
+            oob_mask[(points[:, i] < dim[0]) | (points[:, i] > dim[1])] = 1
+
+        oob_count = points[oob_mask].shape[0]
+        inbounds_count = points.shape[0] - oob_count
+
+        print("Points skipped due to out of bounds:", oob_count)
+        print("Points requiring IDW fallback: ", outside_tri_counter)
+        outlier_count = raw_diffs[(~oob_mask) & (raw_diffs[:, -1] >= threshold)].shape[0]
+        print("Points in bounds not fulfilling condition this iteration:", outlier_count, "(",
+              round(outlier_count / inbounds_count, 2), ")")
+        print("Max diff", round(max(raw_diffs[(~oob_mask), -1]), 2))
+
+        primary_condition_fulfilled = False
+        if outlier_count / inbounds_count < point_threshold:
+            primary_condition_fulfilled = True
+            print("Number of points in bounds outside", threshold, "within", point_threshold)
+
+        plt.title("Samples with values")
+        #plt.xlim(-2.5, 2.5)
+        #plt.ylim(-2.5, 2.5)
+        plt.scatter(points[:, 0], points[:, 1], c=points[:, 2], marker=".", s=0.5, cmap="jet")
+        plt.colorbar(cmap="jet")
+        plt.clim(0, 1)
+        rect = patches.Rectangle((-2, -2), 4, 4, linewidth=1, edgecolor='k', facecolor='none')
+        plt.gca().add_patch(rect)
+        plt.show()
+        plt.close()
+
+        plt.title("Samples with differences")
+        plt.xlim(-2, 2)
+        plt.ylim(-2, 2)
+        plt.scatter(raw_diffs[:, 0], raw_diffs[:, 1], c=raw_diffs[:, 2], marker=".", s=0.5, cmap="nipy_spectral")
+        plt.colorbar(cmap="jet")
+        plt.clim(0, 1)
+        plt.show()
+        plt.close()
+
+        time4 = time.time()
+        print(round(time4 - time3, 2), "to plot scatterplot")
+
+        if max(raw_diffs[(~oob_mask), -1]) < max_diff and primary_condition_fulfilled:
+            return points
+
+        points = np.vstack((points, samples))
+
+        for j in range(random_new_points):
+            coord = [(dim[1] - dim[0]) * np.random.random_sample() + dim[0] for dim in dimensions]
+            points = np.vstack(
+                (
+                    points,
+                    np.array(coord + [get_new_point(*coord)])
+                )
+            )
+
+        if count > max_iterations:
+            finished = True
+            print("Finished: Maximum number of iterations reached.")
+
+        print()
+
+    return points
+
+
+
 def test_interp_2d(points, analytic_fct, grid_side=100):
+
     print("\n==============================")
     print("Testing Interpolation")
-    print("\n==============================")
+    print("==============================")
     print()
     print("Testing at", grid_side**2, "evenly spaced points")
 
@@ -1108,7 +1338,7 @@ def test_interp_2d(points, analytic_fct, grid_side=100):
     print("Smallest / Largest difference:", np.min(diffs), "/", np.max(diffs))
 
     plt.title("Interpolation evaluation - differences")
-    plt.hist(diffs, bins=10)
+    plt.hist(diffs, bins=grid_side**1)
     plt.show()
     plt.close()
 
@@ -1144,24 +1374,24 @@ def test_interp_2d(points, analytic_fct, grid_side=100):
 
 
 
-
+arg_fct = cos2d_squared
 
 points = explore_parameter_space_delaunay_KDE(
     [
         [-2, 2, 11],
         [-2, 2, 11]
     ],
-    exp2d,
+    arg_fct,
     threshold=0.01,
     point_threshold=0.1,
-    random_new_points=100,
+    random_new_points=10,
     sample_multiplier=1,
-    max_diff=0.1,
+    max_diff=999,
     number_of_partitions=10
 )
 
 
-test_interp_2d(points, exp2d, grid_side=100)
+test_interp_2d(points, arg_fct, grid_side=100)
 
 
 

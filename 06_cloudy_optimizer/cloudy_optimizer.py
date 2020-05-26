@@ -1,10 +1,12 @@
-from scipy import spatial
+import subprocess
+import os
+from scipy import spatial, stats
 import numpy as np
 import itertools
 import matplotlib.pyplot as plt
-import subprocess
-
-zin = 0
+import matplotlib.patches as patches
+import time
+import re
 
 def prod(iterable):
     prod = 1
@@ -14,45 +16,15 @@ def prod(iterable):
     return prod
 
 
-def get_test_point(x, y):
-    return np.cos(x*y) ** 2
-
-
-def cloudy_evaluate_points(points):
+def get_folder_size(folder):
     """
+    Returns size of folder in bytes. Does not consider subdirectories, links, etc.
+    https://stackoverflow.com/a/1392549
 
-    :param points:      Numpy array of points in parameter space to evaluate
-                        Right now: (npoints, [T, hden])
+    :param folder:
     :return:
     """
-    # Step 1: Read radiation field
-    with open("rad", "r") as file:
-        rad = file.read()
-
-    # Step 2: Build cloudy files
-    input_files = []
-    for point in points:
-        filename = "c_T" + str(point[0]) + "_hden" + str(point[1]) + ".in"
-        input_files.append(filename)
-
-        with open(filename, "w") as file:
-            file.write('CMB redshift %.2f\n' % zin)
-            file.write("hden " + str(points[1]) + "\n")
-            file.write("constant temperature" + str(points[0]) + "vary\n")
-            file.write('stop zone 1\n')
-            file.write('print last\n')
-            file.write('print short\n')
-            file.write('set save prefix "%s"\n' % filename)
-            file.write('save grid last ".grid"\n')
-            file.write('save overview last ".overview"\n')
-            file.write('save cooling last ".cool"\n')
-            file.write('save heating last ".heat"\n')
-            file.write('save cooling each last ".cool_by_element"\n')
-
-    # Step 3: Execute cloudy runs
-    subprocess.run()
-
-    return
+    return sum(os.path.getsize(f) for f in os.listdir(folder) if os.path.isfile(f))
 
 
 def IDW(points, values, x, exp=1):
@@ -84,179 +56,515 @@ def IDW(points, values, x, exp=1):
     return interp
 
 
-
-
-def explore_parameter_space(
-        dimensions,
-        get_new_point,
-        threshold=0.05,
-        point_threshold=0.05,
-        random_new_points=10,
-        max_diff=None
-):
+def get_base_filename_from_parameters(T, nH, Z, z):
     """
+    Returns filenames for cloudy to use. Does not append suffixes, i.e. returns "filename" instead of "filename.in",
+    "filename.out" etc.
 
-    :param dimensions:      List of list
-                            [[start, stop, number], ...}
-    :param get_new_point:   Function to get new point in space. Must match dimensions
-    :param threshold:       Relative maximum threshold for points to differ from analytic RIGHT NOW ABSOLUTE
-    :param point_threshold: Relative number of points who may be over threshold for interpolation to quit
-    :param random_new_points: How many random new points to add each iteration to avoid "local optimum"
-    :param: max_diff:       Maximum difference any point may have from an analytic
+    Note: In the current implementation the excessive underscores are a precaution in case I want to parse these with
+    regex.
+
+    :param T:
+    :param nH:
+    :param Z: metallicity
+    :param z: redshift
     :return:
     """
-    # Establish initial grid
-    axes = []
-    shape = []
-    volume = 1
-    for dim in dimensions:
-        volume *= abs(dim[0] - dim[1])
-        axes.append(np.linspace(*dim))
-        shape.append(dim[-1])
+    return "T_" + str(T) + "__nH_" + str(nH) + "__Z_" + str(Z) + "__z_" + str(z) + "_"
 
-    # Shape: N points, M coordinates + 1 value
-    points = np.zeros((prod(shape), len(shape)+1))
 
-    for i, comb in enumerate(itertools.product(*axes)):
-        points[i] = np.array([*comb, get_new_point(*comb)])
+def load_point_from_cache(filename):
+    """
+    Loads point from filename in CACHE_FOLDER.
 
-    finished = False
-    count = 0
+    :param filename:
+    :return:        A (1, M+1) numpy array containing the point
+    """
+    point = []
+    # positive lookbehinds and lookaheads
+    point.append(
+        float(re.search(r"(<=T_).*(?=_)", filename)[0])
+    )
+    point.append(
+        float(re.search(r"(<=nH_).*(?=_)", filename)[0])
+    )
 
-    while not finished:
-        finished = True
-        count += 1
-        print(count)
-        point_count = points.shape[0]
-        print("Points this iteration:", point_count)
-        thresh_points = 0
+    # Right now I am only using Ctot for testing purposes
+    point.append(
+        np.loadtxt(filename + ".cool", usecols=3)
+    )
 
-        # Build k-d tree
+    return np.array(point)
+
+
+
+
+def cloudy_evaluate_points(points, Z=0, z=0, jobs=12):
+    """
+
+    :param points:      Numpy array of points in parameter space to evaluate
+                        Right now: (npoints, [T, hden])
+    :param z            redshift
+    :param jobs         no of parallel executions
+    :return:
+    """
+    # Step 1: Read radiation field
+    with open("rad", "r") as file:
+        rad = file.read()
+
+    # Step 2: Build cloudy files
+    input_files = []
+    for point in points:
+        filename = get_base_filename_from_parameters(point[0], point[1], Z, z)
+        input_files.append(filename)
+
+        with open(filename + ".in", "w") as file:
+            file.write('CMB redshift %.2f\n' % z)
+            file.write('table HM12 redshift %.2f\n' % z)
+            file.write("metals " + str(Z) + "\n")
+            file.write("hden " + str(point[1]) + "\n")
+            file.write("constant temperature " + str(point[0]) +"\n")
+            file.write('stop zone 1\n')
+            file.write("iterate to convergence\n")
+            file.write('print last\n')
+            file.write('print short\n')
+            file.write('set save prefix "%s"\n' % filename)
+            #file.write('save grid last ".grid"\n')
+            file.write('save overview last ".overview"\n')
+            file.write('save cooling last ".cool"\n')
+            file.write('save heating last ".heat"\n')
+            file.write('save cooling each last ".cool_by_element"\n')
+            file.write("""save element hydrogen last ".H_ionf"
+save element helium last ".He_ionf"
+save element oxygen last ".O_ionf"
+save element carbon last ".C_ionf"
+save element neon last ".Ne_ionf"
+save element magnesium last ".Mg_ionf"
+save element silicon last ".Si_ionf"
+save last line emissivity ".lines"
+H 1 1215.67A
+H 1 1025.72A
+He 2 1640.43A
+C 3 977.020A
+C 4 1548.19A
+C 4 1550.78A
+N 5 1238.82A
+N 5 1242.80A
+O 6 1031.91A
+O 6 1037.62A
+Si 3 1206.50A
+Si 4 1393.75A
+Si 4 1402.77A
+end of line """)
+            file.write(rad)
+
+    with open("filenames", "w") as file:
+        for filename in input_files:
+            file.write(filename + "\n")
+
+    # Step 3: Execute cloudy runs
+    #result = subprocess.run(["parallel", "-j12", "--progress", "'source/cloudy.exe -r'", ":::: filenames"])
+    os.system("parallel -j12 'source/cloudy.exe -r' :::: filenames")
+
+    # Step 4: Read cooling data
+    # for now only Ctot
+    for i, filename in enumerate(input_files):
+        points[i, -1] = float(np.loadtxt(filename + ".cool", usecols=3))
+
+    # Step 5: Move files to cache
+    pattern = get_base_filename_from_parameters("*", "*", "*", "*") + "*"
+    os.system("mv " + pattern + " " + CACHE_FOLDER)
+
+    return points
+
+
+def simple_print(var):
+    """
+    Custom print with no line separator, analogous to file.write().
+
+    :param var:         Variable to be printed.
+    """
+    print(var, sep="")
+
+
+def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None, logfile=None):
+    """
+    Interpolates the given set of points using delaunay triangulation. The interpolated values are checked against
+    threshold (absolute value). If the difference between interpolated and analytic value is not within threshold,
+    a new samples is drawn in the respective triangle (uniformly).
+    Returns the coordinates of these new samples.
+
+    Some points may be outside of the triangulation area. This particularly happens at corners of the parameter
+    space. For these edge cases Inverse Distance Weighting (IDW) is used for interpolation instead.
+
+    :param points:      Numpy array; Shape (N, M+1), where N is the number of points, M is the dimensionality of these
+                        points. The last column should contain the values associated with the points.
+    :param threshold:   The (absolute) difference to check the interpolation against.
+    :param partitions:  The number of partitions to divide the points into. For each partition, one interpolation will
+                        be done, with this partition being removed from the set of points and the triangulation being
+                        made on the remaining points. More partitions means better accuracy, but slightly longer
+                        runtime.
+    :param prune:       Pruning function. Should take points in and return points. Use to remove points outside of
+                        parameter space.
+    :param logfile:     File object to write into. If none given, print instead.
+    :return:            1. Numpy array; Shape (N, M). Coordinates of new points.
+                        2. Number of points within pruning bounds that do not fulfill threshold condition
+                        3. The maximum difference between analytic and interpolated points
+    """
+    start = time.time()
+    new_points = np.zeros((1, points.shape[1]-1))
+    outside = 0
+    over_thresh_count = 0
+    diffs = points.copy()   # Yes, ugly, but makes things easier
+
+    if logfile:
+        log = logfile.write
+    else:
+        log = simple_print
+
+    for i in range(partitions):
+        mask = np.ones(points.shape[0], dtype=bool)
+        mask[i::partitions] = False     # extract every nth point starting at i
+
+        a = points[mask]    # all points EXCEPT some
+        b = points[~mask]   # only SOME of the points
+
+        tri = spatial.Delaunay(a[:, :-1])
+        simplex_indices = tri.find_simplex(b[:, :-1])   # For all points b find the simplices that contain them
+
+        # Points for IDW interp/Points for barycentric (delaunay) interp
+        idw_points = b[simplex_indices == -1].copy()
+        del_points = b[simplex_indices != -1].copy()
+
+        # Cutting out indices -1
+        simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
+        simplices = tri.simplices[simplex_indices_cleaned]
+        transforms = tri.transform[simplex_indices_cleaned]
+
+        # The following implementation is adapted from
+        # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
+        n = points.shape[1] - 1     # number of coordinate dimensions; subtract one because of value
+
+        # barycentric coordinates of points; N-1
+        bary = np.einsum('ijk,ik->ij', transforms[:, :n, :n], del_points[:, :-1] - transforms[:, n, :])
+
+        # Weights of points; N; (the coordinates sum up to 1, last one is dependent)
+        weights = np.c_[bary, 1 - bary.sum(axis=1)]
+
+        # The actual interpolation step
+        interpolated = []
+        for j in range(del_points.shape[0]):
+            interpolated.append(
+                np.inner(a[simplices[j], -1], weights[j])
+            )
+
+        # Points which are over given threshold
+        over_thresh_unpruned = del_points[np.abs(np.array(interpolated) - del_points[:,-1]) > threshold]
+        if prune:
+            over_thresh = prune(over_thresh_unpruned)
+        else:
+            over_thresh = over_thresh_unpruned
+
+        over_thresh_count += over_thresh.shape[0]
+
+        # Draw coordinates for new samples and convert them to cartesian
+        bcoords = np.random.random((over_thresh.shape[0], n))
+        for dim in range(1, bcoords.shape[1]):
+            # Make sure the coordinates do not sum up to more than 1
+            bcoords[:, dim] *= 1 - np.sum(bcoords[:, dim-1], axis=1)
+
+        assert(max(np.sum(bcoords, axis=1)) < 1)
+
+        bcoords = np.hstack((bcoords, 1 - np.sum(bcoords, axis=1)))
+
+        # At this point I gave up trying to find a vectorized solution.
+        ccoords = []
+        for j in bcoords.shape[0]:
+            ccoords.append([])
+
+            for k in range(n):
+                ccoords[-1].append(
+                    np.sum(bcoords[j] * a[simplices[j], k])
+                )
+
+        new_points = np.vstack((new_points, ccoords))
+
+
+
+        # IDW
+        # NOTE: Currently, we do not draw new samples near IDW points. This should be okay since they are very few
+        outside += idw_points.shape[0]
+
+        # KDTree for finding nearest neighbors to use for IDW
         tree = spatial.cKDTree(
-            points[:, :-1],             # exclude value column
-            copy_data=True              # Just a precaution while using small trees
+            a[:, :-1]  # exclude value column
         )
 
-        diffs = []
-        orig_points = points[:] #help, hacks
-
-
-        # TODO: Optimal way of finding neighbors?
-        # -> Looking in a d+1 dimensional ball with a radius slightly bigger than the distances in the original grid
-        #    guarantees finding neighbors in all dimensions. not efficient in later iterations.
-        #    is finding neighbors in all dimensions important?
-        for i, p in enumerate(points[:]): # enumerate over copy so we can modify original
-            skip = False
-            for j, dim in enumerate(dimensions):
-                if not (dim[0] < p[j] < dim[1] or dim[1] < p[j] < dim[0]):
-                    # do not consider this point for interpolation
-                    skip = True
-                    break
-            if skip:
-                continue
-
-
-            # Determine neighbors of point
+        for j, p in enumerate(idw_points):
+            # Determine closest 4 neighbors of point
             _, p_neigh = tree.query(
                 p[:-1],
                 4
             )
 
-            p_neigh = list(p_neigh)     # list of indices including orig point
-            p_neigh.remove(i)           # list of indices of neighbors
-            p_neigh = points[p_neigh]   # list of points (+ values)
+            p_neigh = list(p_neigh)  # list of indices including orig point
+            # inconsistent behavior - sometimes i is in p_neigh, sometimes not
+            if j in p_neigh:
+                p_neigh.remove(j)  # list of indices of neighbors
+            p_neigh = points[p_neigh]  # list of points (+ values)
 
-            interp_value = IDW(p_neigh[:, :-1], p_neigh[:, -1], p[:-1])
-            # print("Analytic: ", points[i, -1], "\tInterpolated", interp_value, "\tDiff", points[i, -1] - interp_value)
+            idw_points[j, -1] = IDW(p_neigh[:, :-1], p_neigh[:, -1], p[:-1])
 
-            # Check if we need to add more points in this area
-            # If yes, add point halfway between all neighbors
-            #loss = interp_value**2 - p[-1]**2
-            if abs(interp_value - p[-1]) >= threshold * abs(p[-1]):
-                diffs.append(interp_value - p[-1])
-                thresh_points += 1
-                finished = False
-                x = np.reshape(p, (1, p.shape[0]))
-                x = np.repeat(x, p_neigh.shape[0], axis=0)
-                midpoints = (x + p_neigh) / 2# + np.random.normal(0, 0.05, p_neigh.shape)
-                for c in range(midpoints.shape[1]):
-                    # columns
-                    midpoints[:,c] += np.random.normal(
-                        0,
-                        np.sqrt(volume / points.shape[0]), #np.std(midpoints[:,c]),
-                        midpoints.shape[0]
-                    )
-                midpoints[:, -1] = get_new_point(midpoints[:, 0], midpoints[:, 1])
-                points = np.vstack((points, midpoints))
-            else:
-                diffs.append(0)
 
-        print("Points not fulfilling condition this iteration:", thresh_points)
-        print("Relative:", thresh_points/point_count)
+        # This strange construct is required because of how numpy handles assignment to views/multi-masking
+        diffs_view = diffs[~mask]
+        diffs_view[simplex_indices == -1, -1] -= idw_points[:, -1]
+        diffs_view[simplex_indices != -1, -1] -= del_points[:, -1]
+        diffs[~mask] = diffs_view
 
-        if thresh_points/point_count < point_threshold:
-            finished = True
 
-        #print(points)
-        plt.scatter(points[:,0], points[:,1], c=points[:,2], marker=".", s=0.5)
-        plt.colorbar()
-        plt.show()
+    if prune:
+        diffs_pruned = prune(diffs)
+    else:
+        diffs_pruned = diffs
 
-        print("Max diff", max(diffs))
-        print()
 
-        if max(diffs) > max_diff:
-            finished = False
+    oob_count = over_thresh_unpruned.shape[0] - over_thresh.shape[0]
+    max_diff = max(diffs_pruned[:,-1])
 
-        for j in range(random_new_points):
-            coord = [(dim[1] - dim[0]) * np.random.random_sample() + dim[0] for dim in dimensions]
-            points = np.vstack(
-                (
-                    points,
-                    np.array(coord + [get_new_point(*coord)])
-                )
+    log("Interpolated and sampled using Delaunay Triangulation\n")
+    log("\tTime:".ljust(50) + str(round(time.time() - start, 2)) + "s\n")
+    log("\tOut of bounds points (skipped)".ljust(50) + str(oob_count) + "\n")
+    log("\tPoints requiring IDW fallback:".ljust(50) + str(outside) + "\n")
+    log("\tPoints not within threshold:".ljust(50) +
+        str(new_points.shape[0]) + "/" +  # Equal to number of new samples
+        str(points.shape[0]) + " (" +
+        str(round(new_points.shape[0] / points.shape[0], 2)) + ")\n"
+    )
+    log("\tMaximum difference:".ljust(50) + str(max_diff))
+
+
+    new_points = new_points[1:] # Remove zeros used to create array
+
+    return new_points, over_thresh_count, max_diff
+
+
+
+# TODO: I wonder if normalization is even necessary when not using KDE?
+def get_normalization_transform(min, max):
+    """
+    returns two functions, one to transform points in an interval linearly on [0, 1]
+    and one to transform back
+    """
+    def transform(x):
+        return (x - min) / abs(max - min)
+
+    def inv_transform(x):
+        return x * abs(max - min) + min
+
+    return transform, inv_transform
+
+
+def get_pruning_function(dims):
+    """
+    Returns a function to prune an array of points to an Nd cuboid.
+
+    :param dims:    List: [[min, max], [min, max], ...]
+                    len(list) <= points.shape[1]!
+                    min_i < max_i!
+    :return:        pruning function
+    """
+    def prune(points):
+        mask = np.ones(points.shape[0])
+        for i, dim in dims:
+            mask[(points[:, i] < dim[0]) | (points[:, i] > dim[1])] = 0
+
+        return points[mask]
+
+    return prune
+
+
+
+
+NUMBER_OF_JOBS = 12
+NUMBER_OF_PARTITIONS = 10
+THRESHOLD = 0.1                 # Max difference between interpolated and analytic values
+OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
+MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
+MAX_ITERATIONS = 1000           # Maximum number of iterations before aborting
+MAX_STORAGE = 1000              # Maximum storage that may be taken up by data before aborting; in GB
+PLOT_RESULTS = True
+RANDOM_NEW_POINTS = 10          # How many completely random new points to add each iteration
+CACHE_FOLDER = "cache/"
+
+if __name__ == "__main__":
+    point = [5, 4, 0]
+    point = np.reshape(np.array(point), (1, 3))
+    print(point)
+    point = cloudy_evaluate_points(point)
+    print(point)
+    point2 = load_point_from_cache(
+        get_base_filename_from_parameters(5, 4, Z=0, z=0)
+    )
+
+    exit()
+    time_start = time.time()
+    # Cooling function parameter space:
+    # T from 1 to 9
+    # n_h from -4 to 4
+    # Metallicity 0.01, 0.1, and 1
+    # Element abundances: Can be very easily extra/interpolated linearly/analytically, can be done after the fact
+    # Radiation background: Unsolved problem
+    # By convention these are always used in this order, i.e. a point is given by
+    # [T, nH, value] right now and will later be given by [T, nH, Z, z, value] for example
+    T_min = 1
+    T_max = 9
+    T_init_steps = 8
+
+    nH_min = -4
+    nH_max = 4
+    n_init_steps = 7
+
+    dimensions = [[T_min, T_max], [nH_min, nH_max]]
+
+    prune = get_pruning_function([[T_min, T_max], [nH_min, nH_max]])
+
+    # T_transform, T_transform_inv = get_normalization_transform(T_min, T_max)
+    # n_transform, n_transform_inv = get_normalization_transform(nH_min, nH_max)
+
+    # Establish initial grid
+    axes = []
+    shape = []
+
+    axes.append(np.linspace(T_min, T_max, T_init_steps))
+    axes.append(np.linspace(nH_min, nH_max, n_init_steps))
+
+    for axis in axes:
+        shape.append(axis.shape[0])
+
+    # Shape: N points, M coordinates + 1 value
+    points = np.zeros((prod(shape), len(shape) + 1))
+
+    for i, comb in enumerate(itertools.product(*axes)):
+        points[i, :-1] = np.array(comb)
+
+
+    points = cloudy_evaluate_points(points)
+
+    finished = False
+    iteration = 0
+    logfile = open("logfile", "w")
+
+    while not finished:
+        iteration += 1
+        point_count = points.shape[0]
+        logfile.write("Iteration ".ljust(50) + str(iteration) + "\n")
+        logfile.write("Number of points:".ljust(50) + str(point_count) + "\n")
+        thresh_points = 0
+
+        # time1 = time.time()
+        # points[points[:, -1] == np.nan] = cloudy_evaluate_points(points)
+        time2 = time.time()
+        # logfile.write(
+        #     str(round(time2 - time1, 2)) + "to evaluate" + str(points.shape[0]) + "points (" +
+        #     str(round((time2 - time1)/points.shape[0], 2)) + "per point)"
+        # )
+
+        new_points, over_thresh_count, max_diff = interpolate_and_sample_delaunay(
+            points,
+            THRESHOLD,
+            partitions=10,
+        )
+
+        in_bounds_points = prune(points)
+        in_bounds_count = in_bounds_points.shape[0]
+
+        if PLOT_RESULTS:
+            # TODO: Does not generalize
+            plt.title("Samples with values")
+            plt.xlim(T_min, T_max)
+            plt.ylim(nH_min, nH_max)
+            plt.scatter(points[:, 0], points[:, 1], c=points[:, 2], marker=".", s=0.5, cmap="jet")
+            plt.colorbar(cmap="jet")
+            # rect = patches.Rectangle((-2, -2), 4, 4, linewidth=1, edgecolor='k', facecolor='none')
+            # plt.gca().add_patch(rect)
+            plt.show()
+            plt.close()
+
+            # plt.title("Samples with differences")
+            # plt.xlim(-2, 2)
+            # plt.ylim(-2, 2)
+            # plt.scatter(raw_diffs[:, 0], raw_diffs[:, 1], c=raw_diffs[:, 2], marker=".", s=0.5, cmap="nipy_spectral")
+            # plt.colorbar(cmap="jet")
+            # plt.clim(0, 1)
+            # plt.show()
+            # plt.close()
+
+
+        threshold_condition = False
+        if over_thresh_count / in_bounds_count < OVER_THRESH_MAX_FRACTION:
+            threshold_condition = True
+
+        max_diff_condition = False
+        if max_diff < MAX_DIFF:     # Yes, unfortunate naming, but it should be clear that CAPS = constant
+            max_diff_condition = True
+
+        max_iteration_condition = False
+        if iteration > MAX_ITERATIONS:
+            max_iteration_condition = True
+
+        max_storage_condition = False
+        cache_size_gb = get_folder_size(CACHE_FOLDER) / 1e9     # Does not account for base 2
+        if cache_size_gb > MAX_STORAGE:
+            max_storage_condition = True
+
+        if threshold_condition and max_diff_condition:
+            logfile.write("\n\nReached desired accuracy. Quitting.")
+
+        if max_iteration_condition:
+            logfile.write("\n\nReached maximum number of iterations (" + str(MAX_ITERATIONS) + "). Quitting.")
+
+        if max_storage_condition:
+            logfile.write("\n\nReached maximum allowed storage (" + str(MAX_STORAGE) + "GB). Quitting.")
+
+
+        time3 = time.time()
+        new_points = cloudy_evaluate_points(new_points)
+        time4 = time.time()
+        logfile.write(str(round(time4-time3, 2)) + "s to evaluate " + str(new_points.shape[0]) +  " new points\n")
+
+        points = np.vstack((points, new_points))
+
+        # random points
+        random_points = np.zeros((1, points.shape[1]-1))
+
+        for j in range(RANDOM_NEW_POINTS):
+            coord = [(dim[1] - dim[0]) * np.random.random() + dim[0] for dim in dimensions]
+            random_points = np.vstack((random_points, np.array(coord)))
+
+        random_points = np.hstack((random_points, np.zeros((random_points.shape[0], 1))))
+        random_points = random_points[1:]   # remove zeros used to create array
+        random_points = cloudy_evaluate_points(random_points)
+        points = np.vstack(
+            (
+                points,
+                random_points
             )
+        )
 
-            #print(coord + [get_new_point(*coord)])
+        time5 = time.time()
+        logfile.write(str(round(time5 - time4, 2)) + "s to add " + str(RANDOM_NEW_POINTS) + " random new points\n")
 
-        if count > 30:
-            finished = True
-
-
-cloudy_evaluate_points(3)
-exit()
-
-explore_parameter_space(
-    [
-        [-2, 2, 11],
-        [-2, 2, 11]
-    ],
-    get_test_point,
-    threshold=0.05,
-    point_threshold=0.05,
-    random_new_points=20,
-    max_diff=999
-)
+        logfile.write("\n\n")
 
 
 
 
 
+    time_end = time.time()
+    logfile.write("") # TODO: Number of points ran (initial -> final), time ran
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    logfile.close()
 
 
 
