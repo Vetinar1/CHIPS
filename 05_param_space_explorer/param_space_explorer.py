@@ -1147,7 +1147,7 @@ def explore_parameter_space_delaunay_uniform(
                 # Attention! Overwriting previous analytic values with interpolated ones
                 del_points[j, -1] = np.inner(a[simplices[j], -1], weights[j])
 
-                if abs(del_points[j, -1] - orig_value) > threshold:
+                if abs(del_points[j, -1] - orig_value) > threshold * orig_value:
                     if not (dimensions[0][0] < del_points[j, 0 ] < dimensions[0][1]) or not (dimensions[1][0] < del_points[j, 1] < dimensions[1][1]):
                         continue
                     lambda1 = np.random.random()

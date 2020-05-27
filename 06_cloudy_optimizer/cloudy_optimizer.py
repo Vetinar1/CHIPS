@@ -83,18 +83,88 @@ def load_point_from_cache(filename):
     point = []
     # positive lookbehinds and lookaheads
     point.append(
-        float(re.search(r"(<=T_).*(?=_)", filename)[0])
+        float(re.search(r"(?<=T_)[^_]+(?=_)", filename)[0])
     )
     point.append(
-        float(re.search(r"(<=nH_).*(?=_)", filename)[0])
+        float(re.search(r"(?<=nH_)[^_]+(?=_)", filename)[0])
     )
 
     # Right now I am only using Ctot for testing purposes
     point.append(
-        np.loadtxt(filename + ".cool", usecols=3)
+        np.loadtxt(CACHE_FOLDER + filename + ".cool", usecols=3)
     )
 
     return np.array(point)
+
+
+def initialize_points(dimensions=None, logfile=None):
+    """
+    Loads all points from cache. If less points than specified in dimensions are loaded, a grid will be generated
+    according to dimensions, and the points at this grid evaluated.
+
+    Note: This grid is *independent* of how many points were already loaded, provided they were less than would have
+    been created by the dimensions parameter!
+
+    :param dimensions:      List of form [[start, stop, steps], [start, stop, steps], ...]
+                            By convention always in order T, nH, Z, z
+    :return:
+    """
+    if logfile:
+        log = logfile.write
+    else:
+        log = simple_print
+
+    # Establish initial grid; is only actually used if we dont find enough points in the cache, but it conveniently
+    # gives us the shape so i do it first
+    axes = []
+    shape = []
+
+    axes.append(np.linspace(T_min, T_max, T_init_steps))
+    axes.append(np.linspace(nH_min, nH_max, nH_init_steps))
+
+    for axis in axes:
+        shape.append(axis.shape[0])
+
+    # Shape: N points, M coordinates + 1 value
+    points = np.zeros((1, len(shape) + 1))
+
+    # https://stackoverflow.com/a/10378012
+    directory = os.fsencode(CACHE_FOLDER)
+
+    time1 = time.time()
+    log("Initializing points\n")
+    for file in os.listdir(directory):
+        filename = os.fsdecode(file)
+        if filename.endswith(".cool"):
+            points = np.vstack(
+                (
+                    points,
+                    load_point_from_cache(filename[:-len(".cool")])
+                )
+            )
+
+    # Remove zeros
+    points = points[1:]
+
+    time2 = time.time()
+    log(str(round(time2-time1, 2)) + "s to load points from cache\n")
+
+    # Create a grid points as specified in dimensions
+    if points.shape[0] < prod(shape):
+        grid_points = np.zeros((prod(shape), len(shape) + 1))
+
+        for i, comb in enumerate(itertools.product(*axes)):
+            grid_points[i, :-1] = np.array(comb)
+
+        grid_points = cloudy_evaluate_points(grid_points)
+        points = np.vstack((points, grid_points))
+
+        time3 = time.time()
+        log(str(round(time3-time2, 2)) + "s to generate and evaluate an additional " + str(prod(shape)) + " points\n")
+
+    log("\n\n")
+
+    return points
 
 
 
@@ -155,7 +225,8 @@ O 6 1037.62A
 Si 3 1206.50A
 Si 4 1393.75A
 Si 4 1402.77A
-end of line """)
+end of line
+""")
             file.write(rad)
 
     with open("filenames", "w") as file:
@@ -169,7 +240,7 @@ end of line """)
     # Step 4: Read cooling data
     # for now only Ctot
     for i, filename in enumerate(input_files):
-        points[i, -1] = float(np.loadtxt(filename + ".cool", usecols=3))
+        points[i, -1] = np.loadtxt(filename + ".cool", usecols=3)
 
     # Step 5: Move files to cache
     pattern = get_base_filename_from_parameters("*", "*", "*", "*") + "*"
@@ -207,7 +278,7 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
     :param prune:       Pruning function. Should take points in and return points. Use to remove points outside of
                         parameter space.
     :param logfile:     File object to write into. If none given, print instead.
-    :return:            1. Numpy array; Shape (N, M). Coordinates of new points.
+    :return:            1. Numpy array; Shape (N, M). Coordinates of new points. May be None if no new points.
                         2. Number of points within pruning bounds that do not fulfill threshold condition
                         3. The maximum difference between analytic and interpolated points
     """
@@ -259,7 +330,7 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
             )
 
         # Points which are over given threshold
-        over_thresh_unpruned = del_points[np.abs(np.array(interpolated) - del_points[:,-1]) > threshold]
+        over_thresh_unpruned = del_points[np.abs(np.array(interpolated) - del_points[:,-1]) > (threshold * del_points[:,-1])]
         if prune:
             over_thresh = prune(over_thresh_unpruned)
         else:
@@ -268,26 +339,32 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         over_thresh_count += over_thresh.shape[0]
 
         # Draw coordinates for new samples and convert them to cartesian
-        bcoords = np.random.random((over_thresh.shape[0], n))
-        for dim in range(1, bcoords.shape[1]):
-            # Make sure the coordinates do not sum up to more than 1
-            bcoords[:, dim] *= 1 - np.sum(bcoords[:, dim-1], axis=1)
+        if over_thresh.size > 0:
+            bcoords = np.random.random((over_thresh.shape[0], n))
+            for dim in range(1, bcoords.shape[1]):
+                # Make sure the coordinates do not sum up to more than 1
+                bcoords[:, dim] *= 1 - np.sum(bcoords[:, :dim], axis=1)
 
-        assert(max(np.sum(bcoords, axis=1)) < 1)
+            #print(bcoords)
+            assert(max(np.sum(bcoords, axis=1)) < 1)
 
-        bcoords = np.hstack((bcoords, 1 - np.sum(bcoords, axis=1)))
+            bcoords = np.hstack((bcoords, np.reshape(1 - np.sum(bcoords, axis=1), (bcoords.shape[0], 1))))
 
-        # At this point I gave up trying to find a vectorized solution.
-        ccoords = []
-        for j in bcoords.shape[0]:
-            ccoords.append([])
+            # At this point I gave up trying to find a vectorized solution.
+            ccoords = []
+            for j in range(bcoords.shape[0]):
+                ccoords.append([])
 
-            for k in range(n):
-                ccoords[-1].append(
-                    np.sum(bcoords[j] * a[simplices[j], k])
-                )
+                for k in range(n):
+                    ccoords[-1].append(
+                        np.sum(bcoords[j] * a[simplices[j], k])
+                    )
 
-        new_points = np.vstack((new_points, ccoords))
+            new_points = np.vstack((new_points, ccoords))
+        else:
+            log("WARNING: No points over threshold. Are you sure your parameters are tight enough? (partition " +
+                str(i) + "/" + str(partitions) + ")\n")
+            new_points = None
 
 
 
@@ -309,8 +386,9 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
 
             p_neigh = list(p_neigh)  # list of indices including orig point
             # inconsistent behavior - sometimes i is in p_neigh, sometimes not
-            if j in p_neigh:
-                p_neigh.remove(j)  # list of indices of neighbors
+            # I just realized j is indexing something different. Original issue still a thing?
+            # while j in p_neigh:
+            #     p_neigh.remove(j)  # list of indices of neighbors
             p_neigh = points[p_neigh]  # list of points (+ values)
 
             idw_points[j, -1] = IDW(p_neigh[:, :-1], p_neigh[:, -1], p[:-1])
@@ -318,8 +396,8 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
 
         # This strange construct is required because of how numpy handles assignment to views/multi-masking
         diffs_view = diffs[~mask]
-        diffs_view[simplex_indices == -1, -1] -= idw_points[:, -1]
-        diffs_view[simplex_indices != -1, -1] -= del_points[:, -1]
+        diffs_view[simplex_indices == -1, -1] = np.abs(diffs_view[simplex_indices == -1, -1] / idw_points[:, -1] - 1)
+        diffs_view[simplex_indices != -1, -1] = np.abs(diffs_view[simplex_indices != -1, -1] / del_points[:, -1] - 1)
         diffs[~mask] = diffs_view
 
 
@@ -330,6 +408,9 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
 
 
     oob_count = over_thresh_unpruned.shape[0] - over_thresh.shape[0]
+    new_point_count = 0
+    if new_points is not None:
+        new_point_count = new_points.shape[0]
     max_diff = max(diffs_pruned[:,-1])
 
     log("Interpolated and sampled using Delaunay Triangulation\n")
@@ -337,14 +418,14 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
     log("\tOut of bounds points (skipped)".ljust(50) + str(oob_count) + "\n")
     log("\tPoints requiring IDW fallback:".ljust(50) + str(outside) + "\n")
     log("\tPoints not within threshold:".ljust(50) +
-        str(new_points.shape[0]) + "/" +  # Equal to number of new samples
+        str(new_point_count) + "/" +  # Equal to number of new samples
         str(points.shape[0]) + " (" +
-        str(round(new_points.shape[0] / points.shape[0], 2)) + ")\n"
+        str(round(new_point_count / points.shape[0], 2)) + ")\n"
     )
-    log("\tMaximum difference:".ljust(50) + str(max_diff))
+    log("\tMaximum difference:".ljust(50) + str(max_diff) + "\n")
 
-
-    new_points = new_points[1:] # Remove zeros used to create array
+    if new_points is not None:
+        new_points = new_points[1:] # Remove zeros used to create array
 
     return new_points, over_thresh_count, max_diff
 
@@ -375,8 +456,8 @@ def get_pruning_function(dims):
     :return:        pruning function
     """
     def prune(points):
-        mask = np.ones(points.shape[0])
-        for i, dim in dims:
+        mask = np.ones(points.shape[0], dtype=bool)
+        for i, dim in enumerate(dims):
             mask[(points[:, i] < dim[0]) | (points[:, i] > dim[1])] = 0
 
         return points[mask]
@@ -386,29 +467,23 @@ def get_pruning_function(dims):
 
 
 
-NUMBER_OF_JOBS = 12
+NUMBER_OF_JOBS = 40
 NUMBER_OF_PARTITIONS = 10
 THRESHOLD = 0.1                 # Max difference between interpolated and analytic values
 OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
 MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
-MAX_ITERATIONS = 1000           # Maximum number of iterations before aborting
-MAX_STORAGE = 1000              # Maximum storage that may be taken up by data before aborting; in GB
+MAX_ITERATIONS = None           # Maximum number of iterations before aborting
+MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
+MAX_TIME = 24*3600              # Maximum runtime in seconds
 PLOT_RESULTS = True
 RANDOM_NEW_POINTS = 10          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
 
+# TODO: Fix divide by 0 in IDW
 if __name__ == "__main__":
-    point = [5, 4, 0]
-    point = np.reshape(np.array(point), (1, 3))
-    print(point)
-    point = cloudy_evaluate_points(point)
-    print(point)
-    point2 = load_point_from_cache(
-        get_base_filename_from_parameters(5, 4, Z=0, z=0)
-    )
-
-    exit()
     time_start = time.time()
+    logfile = open("logfile", "w")
+
     # Cooling function parameter space:
     # T from 1 to 9
     # n_h from -4 to 4
@@ -419,61 +494,39 @@ if __name__ == "__main__":
     # [T, nH, value] right now and will later be given by [T, nH, Z, z, value] for example
     T_min = 1
     T_max = 9
-    T_init_steps = 8
+    T_init_steps = 7
 
     nH_min = -4
     nH_max = 4
-    n_init_steps = 7
+    nH_init_steps = 7
 
-    dimensions = [[T_min, T_max], [nH_min, nH_max]]
+    dimensions = [[T_min, T_max, T_init_steps], [nH_min, nH_max, nH_init_steps]]
+    points = initialize_points(dimensions, logfile)
+    prune = get_pruning_function(dimensions)
+    init_point_count = points.shape[0]
 
-    prune = get_pruning_function([[T_min, T_max], [nH_min, nH_max]])
-
-    # T_transform, T_transform_inv = get_normalization_transform(T_min, T_max)
-    # n_transform, n_transform_inv = get_normalization_transform(nH_min, nH_max)
-
-    # Establish initial grid
-    axes = []
-    shape = []
-
-    axes.append(np.linspace(T_min, T_max, T_init_steps))
-    axes.append(np.linspace(nH_min, nH_max, n_init_steps))
-
-    for axis in axes:
-        shape.append(axis.shape[0])
-
-    # Shape: N points, M coordinates + 1 value
-    points = np.zeros((prod(shape), len(shape) + 1))
-
-    for i, comb in enumerate(itertools.product(*axes)):
-        points[i, :-1] = np.array(comb)
-
-
-    points = cloudy_evaluate_points(points)
-
-    finished = False
     iteration = 0
-    logfile = open("logfile", "w")
 
-    while not finished:
+    while True:
         iteration += 1
         point_count = points.shape[0]
         logfile.write("Iteration ".ljust(50) + str(iteration) + "\n")
         logfile.write("Number of points:".ljust(50) + str(point_count) + "\n")
         thresh_points = 0
 
-        # time1 = time.time()
-        # points[points[:, -1] == np.nan] = cloudy_evaluate_points(points)
+        time1 = time.time()
+        prev_length = points.shape[0]
+        points = np.unique(points, axis=0)
+        if points.shape[0] < prev_length:
+            logfile.write("Removed duplicates:".ljust(50) + str(prev_length - points.shape[0]) + "\n")
+
         time2 = time.time()
-        # logfile.write(
-        #     str(round(time2 - time1, 2)) + "to evaluate" + str(points.shape[0]) + "points (" +
-        #     str(round((time2 - time1)/points.shape[0], 2)) + "per point)"
-        # )
 
         new_points, over_thresh_count, max_diff = interpolate_and_sample_delaunay(
             points,
             THRESHOLD,
             partitions=10,
+            logfile=logfile
         )
 
         in_bounds_points = prune(points)
@@ -481,59 +534,67 @@ if __name__ == "__main__":
 
         if PLOT_RESULTS:
             # TODO: Does not generalize
-            plt.title("Samples with values")
-            plt.xlim(T_min, T_max)
-            plt.ylim(nH_min, nH_max)
+            plt.title(r"$C_{tot}$ in erg/cm$^3$/s")
+            plt.xlim(T_min-1, T_max+1)
+            plt.xlabel("log T/K")
+            plt.ylim(nH_min-1, nH_max+1)
+            plt.ylabel(r"log $n_H$/cm$^{-3}$")
             plt.scatter(points[:, 0], points[:, 1], c=points[:, 2], marker=".", s=0.5, cmap="jet")
             plt.colorbar(cmap="jet")
-            # rect = patches.Rectangle((-2, -2), 4, 4, linewidth=1, edgecolor='k', facecolor='none')
-            # plt.gca().add_patch(rect)
-            plt.show()
+            rect = patches.Rectangle((T_min, nH_min), T_max - T_min, nH_max - nH_min, linewidth=1, edgecolor='k', facecolor='none')
+            plt.gca().add_patch(rect)
+            plt.savefig("iteration" + str(iteration) + ".png")
             plt.close()
-
-            # plt.title("Samples with differences")
-            # plt.xlim(-2, 2)
-            # plt.ylim(-2, 2)
-            # plt.scatter(raw_diffs[:, 0], raw_diffs[:, 1], c=raw_diffs[:, 2], marker=".", s=0.5, cmap="nipy_spectral")
-            # plt.colorbar(cmap="jet")
-            # plt.clim(0, 1)
-            # plt.show()
-            # plt.close()
 
 
         threshold_condition = False
-        if over_thresh_count / in_bounds_count < OVER_THRESH_MAX_FRACTION:
+        if OVER_THRESH_MAX_FRACTION and over_thresh_count / in_bounds_count < OVER_THRESH_MAX_FRACTION:
             threshold_condition = True
 
         max_diff_condition = False
-        if max_diff < MAX_DIFF:     # Yes, unfortunate naming, but it should be clear that CAPS = constant
+        if MAX_DIFF and max_diff < MAX_DIFF:     # Yes, unfortunate naming, but it should be clear that CAPS = constant
             max_diff_condition = True
 
         max_iteration_condition = False
-        if iteration > MAX_ITERATIONS:
+        if MAX_ITERATIONS and iteration > MAX_ITERATIONS:
             max_iteration_condition = True
 
         max_storage_condition = False
         cache_size_gb = get_folder_size(CACHE_FOLDER) / 1e9     # Does not account for base 2
-        if cache_size_gb > MAX_STORAGE:
+        if MAX_STORAGE and cache_size_gb > MAX_STORAGE:
             max_storage_condition = True
 
+        max_time_condition = False
+        if MAX_TIME and time.time() - time_start > MAX_TIME:
+            max_time_condition = True
+
         if threshold_condition and max_diff_condition:
-            logfile.write("\n\nReached desired accuracy. Quitting.")
+            logfile.write("\n\nReached desired accuracy. Quitting.\n\n")
+            break
 
         if max_iteration_condition:
-            logfile.write("\n\nReached maximum number of iterations (" + str(MAX_ITERATIONS) + "). Quitting.")
+            logfile.write("\n\nReached maximum number of iterations (" + str(MAX_ITERATIONS) + "). Quitting.\n\n")
+            break
 
         if max_storage_condition:
-            logfile.write("\n\nReached maximum allowed storage (" + str(MAX_STORAGE) + "GB). Quitting.")
+            logfile.write("\n\nReached maximum allowed storage (" + str(MAX_STORAGE) + "GB). Quitting.\n\n")
+            break
+
+        if max_time_condition:
+            logfile.write("\n\nReached maximum calculation time (" + str(MAX_TIME) + "s). Quitting.\n\n")
+            break
 
 
         time3 = time.time()
-        new_points = cloudy_evaluate_points(new_points)
-        time4 = time.time()
-        logfile.write(str(round(time4-time3, 2)) + "s to evaluate " + str(new_points.shape[0]) +  " new points\n")
+        if new_points is not None:
+            new_points = np.hstack((new_points, np.zeros((new_points.shape[0], 1))))
+            new_points = cloudy_evaluate_points(new_points)
+            time4 = time.time()
+            points = np.vstack((points, new_points))
 
-        points = np.vstack((points, new_points))
+            logfile.write(str(round(time4-time3, 2)) + "s to evaluate " + str(new_points.shape[0]) +  " new points\n")
+        else:
+            time4 = time.time()
 
         # random points
         random_points = np.zeros((1, points.shape[1]-1))
@@ -562,7 +623,21 @@ if __name__ == "__main__":
 
 
     time_end = time.time()
-    logfile.write("") # TODO: Number of points ran (initial -> final), time ran
+    elapsed = time_end - time_start
+
+    hours = (elapsed - (elapsed % 3600)) / 3600
+    seconds_no_hours = elapsed % 3600
+    minutes = (seconds_no_hours - (seconds_no_hours % 60)) / 60
+    seconds = seconds_no_hours % 60
+
+    logfile.write("Run complete; Calculated at least " +
+                  str(points.shape[0] - init_point_count) + " new points (" +
+                  str(points.shape[0]) + " total) in " +
+                  str(round(elapsed, 2)) + "s / " +
+                  str(int(hours)) + "h " +
+                  str(int(minutes)) + "m " +
+                  str(round(seconds, 2)) + "s"
+    )
 
     logfile.close()
 
