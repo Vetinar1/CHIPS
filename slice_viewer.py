@@ -37,8 +37,13 @@ def view_slice(points, begin, end, steps, filename=None):
     :return:
     """
 
+    # coord interpolator gets the coordinates along the line via linear interpolation
     coord_interpolator = get_ndim_linear_interp(begin, end)
+
+    # interp coordinates are these coordinates along the line
     interp_coordinates = coord_interpolator(np.linspace(0, 1, steps))
+
+    # use the delaunay interpolator to get the values at the interp coordinates
     interpolated = interpolate_delaunay(
         points,
         interp_coordinates
@@ -53,13 +58,4 @@ def view_slice(points, begin, end, steps, filename=None):
 
 if __name__ == "__main__":
     points = initialize_points(add_grid=False, cache_overwrite="run1/cache/")
-    # view_slice(points)
-
-    interp = get_ndim_linear_interp([5, 9, 3], [20, 14, 4])
-    points = interp(np.linspace(0, 1, 100))
-    print(points)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot(points[:,0], points[:,1], points[:,2])
-    fig.show()
+    view_slice(points, [2, 0], [8, 0], 100)
