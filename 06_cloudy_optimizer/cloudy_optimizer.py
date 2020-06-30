@@ -73,13 +73,18 @@ def get_base_filename_from_parameters(T, nH, Z, z):
     return "T_" + str(T) + "__nH_" + str(nH) + "__Z_" + str(Z) + "__z_" + str(z) + "_"
 
 
-def load_point_from_cache(filename):
+def load_point_from_cache(filename, cache_overwrite=None):
     """
     Loads point from filename in CACHE_FOLDER.
 
     :param filename:
     :return:        A (1, M+1) numpy array containing the point
     """
+    if cache_overwrite:
+        directory = cache_overwrite
+    else:
+        directory = CACHE_FOLDER
+
     point = []
     # positive lookbehinds and lookaheads
     point.append(
@@ -91,13 +96,13 @@ def load_point_from_cache(filename):
 
     # Right now I am only using Ctot for testing purposes
     point.append(
-        np.loadtxt(CACHE_FOLDER + filename + ".cool", usecols=3)
+        np.loadtxt(directory + filename + ".cool", usecols=3)
     )
 
     return np.array(point)
 
 
-def initialize_points(dimensions=None, logfile=None):
+def initialize_points(dimensions=None, logfile=None, add_grid=True, cache_overwrite=None):
     """
     Loads all points from cache. If less points than specified in dimensions are loaded, a grid will be generated
     according to dimensions, and the points at this grid evaluated.
@@ -107,6 +112,8 @@ def initialize_points(dimensions=None, logfile=None):
 
     :param dimensions:      List of form [[start, stop, steps], [start, stop, steps], ...]
                             By convention always in order T, nH, Z, z
+    :param logfile:         Logfile to write into. If none, print instead.
+    :param add_grid:        If True a grid will be added like described, otherwise this step is skipped.
     :return:
     """
     if logfile:
@@ -119,8 +126,9 @@ def initialize_points(dimensions=None, logfile=None):
     axes = []
     shape = []
 
-    axes.append(np.linspace(T_min, T_max, T_init_steps))
-    axes.append(np.linspace(nH_min, nH_max, nH_init_steps))
+    # TODO: THis should use dimensions parameter instead!
+    #axes.append(np.linspace(T_min, T_max, T_init_steps))
+    #axes.append(np.linspace(nH_min, nH_max, nH_init_steps))
 
     for axis in axes:
         shape.append(axis.shape[0])
@@ -129,7 +137,10 @@ def initialize_points(dimensions=None, logfile=None):
     points = np.zeros((1, len(shape) + 1))
 
     # https://stackoverflow.com/a/10378012
-    directory = os.fsencode(CACHE_FOLDER)
+    if cache_overwrite:
+        directory = os.fsencode(cache_overwrite)
+    else:
+        directory = os.fsencode(CACHE_FOLDER)
 
     time1 = time.time()
     log("Initializing points\n")
@@ -139,7 +150,7 @@ def initialize_points(dimensions=None, logfile=None):
             points = np.vstack(
                 (
                     points,
-                    load_point_from_cache(filename[:-len(".cool")])
+                    load_point_from_cache(filename[:-len(".cool")], cache_overwrite)
                 )
             )
 
@@ -150,7 +161,7 @@ def initialize_points(dimensions=None, logfile=None):
     log(str(round(time2-time1, 2)) + "s to load points from cache\n")
 
     # Create a grid points as specified in dimensions
-    if points.shape[0] < prod(shape):
+    if add_grid and points.shape[0] < prod(shape):
         grid_points = np.zeros((prod(shape), len(shape) + 1))
 
         for i, comb in enumerate(itertools.product(*axes)):
@@ -256,6 +267,41 @@ def simple_print(var):
     :param var:         Variable to be printed.
     """
     print(var, sep="")
+
+
+def interpolate_delaunay(points, interp_coords):
+    """
+    Use points to interpolate at positions interp_coords using Delaunay triangulation.
+    For a commented version see interpolate_and_sample_delaunay
+
+    TODO: Integrate into interpolate_and_sample_delaunay
+
+    :param points:          Points; coords + values; Shape (N, M+1)
+    :param interp_coords:   Coords only; Shape (N', M)
+    :return:                Array of values at interp_coords; Shape N'
+    """
+    tri = spatial.Delaunay(points[:, :-1])
+    simplex_indices = tri.find_simplex(interp_coords)
+
+    valid_coords = interp_coords[simplex_indices != -1]
+    simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
+    simplices = tri.simplices[simplex_indices_cleaned]
+    transforms = tri.transform[simplex_indices_cleaned]
+
+    n = interp_coords.shape[1]
+
+    bary = np.einsum('ijk,ik->ij', transforms[:, :n, :n], valid_coords - transforms[:, n, :])
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+
+    # The actual interpolation step
+    interpolated = []
+    for j in range(valid_coords.shape[0]):
+        interpolated.append(
+            np.inner(points[simplices[j], -1], weights[j])
+        )
+
+    return np.array(interpolated)
+
 
 
 def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None, logfile=None):
@@ -474,7 +520,7 @@ OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not
 MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
 MAX_ITERATIONS = None           # Maximum number of iterations before aborting
 MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
-MAX_TIME = 24*3600              # Maximum runtime in seconds
+MAX_TIME = 3600                 # Maximum runtime in seconds
 PLOT_RESULTS = True
 RANDOM_NEW_POINTS = 10          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
@@ -492,8 +538,8 @@ if __name__ == "__main__":
     # Radiation background: Unsolved problem
     # By convention these are always used in this order, i.e. a point is given by
     # [T, nH, value] right now and will later be given by [T, nH, Z, z, value] for example
-    T_min = 1
-    T_max = 9
+    T_min = 0.5
+    T_max = 1.5
     T_init_steps = 7
 
     nH_min = -4

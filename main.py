@@ -2,6 +2,34 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+
+data = np.loadtxt("bla", usecols=[0,1])
+figure = plt.figure(figsize=(10,10))
+plt.plot(data[:,0], data[:,1])
+plt.xlabel(r"$x$ in AU")
+plt.ylabel(r"$y$ in AU")
+plt.xlim(-2, 2)
+plt.ylim(-2, 2)
+# ylabel.set_rotation(0)
+plt.show()
+
+data = np.loadtxt("bla", usecols=3)
+figure = plt.figure(figsize=(5,5))
+plt.plot(data)
+plt.xlabel(r"Time")
+plt.ylabel(r"Energy of system")
+plt.xticks([])
+plt.yticks([])
+# ylabel.set_rotation(0)
+plt.show()
+
+
+
+
+
+
+exit()
+
 RUN_LABEL = "03_fine"
 
 data = pd.read_csv(
