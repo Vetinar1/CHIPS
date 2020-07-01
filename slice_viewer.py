@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import time
 import re
-from cloudy_optimizer import initialize_points, interpolate_delaunay
+from cloudy_optimizer import *
 
 
 def get_ndim_linear_interp(point1, point2):
@@ -47,7 +47,7 @@ def view_slice(points, begin, end, steps, filename=None):
     interpolated = interpolate_delaunay(
         points,
         interp_coordinates
-    )
+    )[0]
 
     plt.plot(np.linspace(0, 1, steps), interpolated)
     plt.xlabel("x: " + str(begin) + " to " + str(end))
@@ -57,5 +57,6 @@ def view_slice(points, begin, end, steps, filename=None):
 
 
 if __name__ == "__main__":
-    points = initialize_points(add_grid=False, cache_overwrite="run1/cache/")
-    view_slice(points, [2, 0], [8, 0], 100)
+    points = load_all_points_from_cache(cache_folder="run2/cache/")
+    for i in range(-3, 3):
+        view_slice(points, [0.51, i], [1.49, i], 100)

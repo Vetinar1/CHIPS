@@ -418,7 +418,7 @@ def combine_6spectra(zin, Phins, Phios, PhiT6, PhiT7, PhiT8, base_name='cloudy_i
 #############################################################################################################
 
 # example of combined UVB+LPF spectrum together with the corresponding Cloudy input
-combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, 21.5, base_name='cloudy_inputs/rad')
+combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, 21.5, base_name='rad')
 
 # for i in [-3, -2, -1]:
 #     combine_6spectra(0., 10**i, 5.0e8, 18.5, 19.5, 21.5, base_name='cloudy_inputs/10_rad_test'+str(i))
