@@ -258,27 +258,33 @@ def interpolate_delaunay(points, interp_coords):
 
     :param points:          Points; coords + values; Shape (N, M+1)
     :param interp_coords:   Coords only; Shape (N', M)
-    :return:                1. Array of values at interp_coords; Shape N'
-                            2. Array of coordinates that could not be interpolated because they are outside
-                            the triangulation area.
+    :return:                1. Array of successfully interpolated points with values at interp_coords; Shape (N'', M+1)
+                            2. Mask for interp_coords that is true for each element that couldnt be interpolated/
+                            was ignored; Shape (N)
+                            3. The triangulation object
     """
-    # Note that some code here is duplicate compared to interpolate_and_sample_delaunay
-    # The reason is that the triangulation in the other function is also used to determine which points to use
-    # the fallback method on (IDW)
 
     tri = spatial.Delaunay(points[:, :-1])              # Triangulation
     simplex_indices = tri.find_simplex(interp_coords)   # Find the indices of the simplices containing the interp_coords
 
     # Only consider those points which are inside of the triangulation area space.
-    valid_coords = interp_coords[simplex_indices != -1]
+    valid_coords   = interp_coords[simplex_indices != -1]
     ignored_coords = interp_coords[simplex_indices == -1]
+
+    # Get the simplices and transforms containing the valid points
     simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
-    simplices = tri.simplices[simplex_indices_cleaned]
+    simplices  = tri.simplices[simplex_indices_cleaned]
     transforms = tri.transform[simplex_indices_cleaned]
 
+    # Adapted from
+    # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
+    # Get number of coordinate dimensions
     n = interp_coords.shape[1]
 
+    # barycentric coordinates of points; N-1
     bary = np.einsum('ijk,ik->ij', transforms[:, :n, :n], valid_coords - transforms[:, n, :])
+
+    # Weights of points/complete barycentric coordinates (including the last dependent one); N
     weights = np.c_[bary, 1 - bary.sum(axis=1)]
 
     # The actual interpolation step
@@ -288,7 +294,8 @@ def interpolate_delaunay(points, interp_coords):
             np.inner(points[simplices[j], -1], weights[j])
         )
 
-    return np.array(interpolated), ignored_coords
+    ignored_mask = simplex_indices == -1
+    return np.hstack((valid_coords, np.array(interpolated))), ignored_mask, tri
 
 
 
@@ -304,7 +311,7 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
 
     :param points:      Numpy array; Shape (N, M+1), where N is the number of points, M is the dimensionality of these
                         points. The last column should contain the values associated with the points.
-    :param threshold:   The (absolute) difference to check the interpolation against.
+    :param threshold:   The (absolute) difference to check the interpolation against, in dex.
     :param partitions:  The number of partitions to divide the points into. For each partition, one interpolation will
                         be done, with this partition being removed from the set of points and the triangulation being
                         made on the remaining points. More partitions means better accuracy, but slightly longer
@@ -317,10 +324,14 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
                         3. The maximum difference between analytic and interpolated points
     """
     start = time.time()
-    new_points = np.zeros((1, points.shape[1]-1))
+    N = points.shape[1] - 1 # dimensions
+    new_points = np.zeros((1, N))
     outside = 0
     over_thresh_count = 0
-    diffs = points.copy()   # Yes, ugly, but makes things easier TODO: Potential vector for optimization
+
+    # Yes, ugly, but makes things easier TODO: Potential vector for optimization
+    # Will hold relative differences
+    diffs = points.copy()
 
     if logfile:
         log = logfile.write
@@ -334,37 +345,19 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         a = points[mask]    # all points EXCEPT some
         b = points[~mask]   # only SOME of the points
 
-        tri = spatial.Delaunay(a[:, :-1])
-        simplex_indices = tri.find_simplex(b[:, :-1])   # For all points b find the simplices that contain them
+        interp_points, ignored_mask, tri = interpolate_delaunay(a, b[:,:-1])
+        orig_points = b[~ignored_mask]  # for comparison against interp_points
 
-        # Points for IDW interp/Points for barycentric (delaunay) interp
-        idw_points = b[simplex_indices == -1].copy()
-        del_points = b[simplex_indices != -1].copy()
-
-        # Cutting out indices -1
-        simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
-        simplices = tri.simplices[simplex_indices_cleaned]
-        transforms = tri.transform[simplex_indices_cleaned]
-
-        # The following implementation is adapted from
-        # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
-        n = points.shape[1] - 1     # number of coordinate dimensions; subtract one because of value
-
-        # barycentric coordinates of points; N-1
-        bary = np.einsum('ijk,ik->ij', transforms[:, :n, :n], del_points[:, :-1] - transforms[:, n, :])
-
-        # Weights of points; N; (the coordinates sum up to 1, last one is dependent)
-        weights = np.c_[bary, 1 - bary.sum(axis=1)]
-
-        # The actual interpolation step
-        interpolated = []
-        for j in range(del_points.shape[0]):
-            interpolated.append(
-                np.inner(a[simplices[j], -1], weights[j])
-            )
 
         # Points which are over given threshold
-        over_thresh_unpruned = del_points[np.abs(np.array(interpolated) - del_points[:,-1]) > (threshold * del_points[:,-1])]
+        # log10s because I want to use the threshold in dexp
+        over_thresh_unpruned = orig_points[
+            np.abs(
+                np.log10(interp_points[:,-1]) - np.log10(orig_points[:,-1])
+            ) > threshold
+        ]
+
+        # Remove points outside considered parameter space
         if prune:
             over_thresh = prune(over_thresh_unpruned)
         else:
@@ -373,8 +366,12 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         over_thresh_count += over_thresh.shape[0]
 
         # Draw coordinates for new samples and convert them to cartesian
+        # TODO Make separate function?
         if over_thresh.size > 0:
-            bcoords = np.random.random((over_thresh.shape[0], n))
+
+            # Draw new *barycentric* coordinates; 1 for each new point, same number of dimensions
+            bcoords = np.random.random((over_thresh.shape[0], N))
+
             for dim in range(1, bcoords.shape[1]):
                 # Make sure the coordinates do not sum up to more than 1
                 bcoords[:, dim] *= 1 - np.sum(bcoords[:, :dim], axis=1)
@@ -382,14 +379,18 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
             #print(bcoords)
             assert(max(np.sum(bcoords, axis=1)) < 1)
 
+            # Add last - linearly dependent - coordinate
             bcoords = np.hstack((bcoords, np.reshape(1 - np.sum(bcoords, axis=1), (bcoords.shape[0], 1))))
 
             # At this point I gave up trying to find a vectorized solution.
-            ccoords = []
+            ccoords = []    # cartesian
+
+            # reconstruct simplices from other function, we need it here
+            simplices = tri.simplices[~ignored_mask]
             for j in range(bcoords.shape[0]):
                 ccoords.append([])
 
-                for k in range(n):
+                for k in range(N):
                     ccoords[-1].append(
                         np.sum(bcoords[j] * a[simplices[j], k])
                     )
@@ -398,54 +399,71 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         else:
             log("WARNING: No points over threshold. Are you sure your parameters are tight enough? (partition " +
                 str(i) + "/" + str(partitions) + ")\n")
-            new_points = None
+
+        # end TODO
 
 
 
-        # IDW
-        # NOTE: Currently, we do not draw new samples near IDW points. This should be okay since they are very few
-        outside += idw_points.shape[0]
+        # # IDW
+        # # NOTE: Currently, we do not draw new samples near IDW points. This should be okay since they are very few
+        # outside += idw_points.shape[0]
+        #
+        # # KDTree for finding nearest neighbors to use for IDW
+        # tree = spatial.cKDTree(
+        #     a[:, :-1]  # exclude value column
+        # )
+        #
+        # for j, p in enumerate(idw_points):
+        #     # Determine closest 4 neighbors of point
+        #     _, p_neigh = tree.query(
+        #         p[:-1],
+        #         4
+        #     )
+        #
+        #     p_neigh = list(p_neigh)  # list of indices including orig point
+        #     # inconsistent behavior - sometimes i is in p_neigh, sometimes not
+        #     # I just realized j is indexing something different. Original issue still a thing?
+        #     # while j in p_neigh:
+        #     #     p_neigh.remove(j)  # list of indices of neighbors
+        #     p_neigh = points[p_neigh]  # list of points (+ values)
+        #
+        #     idw_points[j, -1] = IDW(p_neigh[:, :-1], p_neigh[:, -1], p[:-1])
 
-        # KDTree for finding nearest neighbors to use for IDW
-        tree = spatial.cKDTree(
-            a[:, :-1]  # exclude value column
-        )
 
-        for j, p in enumerate(idw_points):
-            # Determine closest 4 neighbors of point
-            _, p_neigh = tree.query(
-                p[:-1],
-                4
-            )
-
-            p_neigh = list(p_neigh)  # list of indices including orig point
-            # inconsistent behavior - sometimes i is in p_neigh, sometimes not
-            # I just realized j is indexing something different. Original issue still a thing?
-            # while j in p_neigh:
-            #     p_neigh.remove(j)  # list of indices of neighbors
-            p_neigh = points[p_neigh]  # list of points (+ values)
-
-            idw_points[j, -1] = IDW(p_neigh[:, :-1], p_neigh[:, -1], p[:-1])
-
-
+        # Calculate relative differences between original values and interpolation
+        # Note: Currently, points that could not be interpolated (previously using IDW) are dropped silently
         # This strange construct is required because of how numpy handles assignment to views/multi-masking
         diffs_view = diffs[~mask]
-        diffs_view[simplex_indices == -1, -1] = np.abs(diffs_view[simplex_indices == -1, -1] / idw_points[:, -1] - 1)
-        diffs_view[simplex_indices != -1, -1] = np.abs(diffs_view[simplex_indices != -1, -1] / del_points[:, -1] - 1)
+        # diffs_view[ ignored_mask, -1] = np.abs(diffs_view[ ignored_mask, -1] / idw_points[:, -1] - 1)
+        diffs_view[ ignored_mask, -1] = np.nan
+        diffs_view[~ignored_mask, -1] = np.abs(diffs_view[~ignored_mask, -1] / orig_points[:, -1] - 1)
         diffs[~mask] = diffs_view
 
+    # Note: Continuation of the silent dropping of non-interpolated values
+    diffs = drop_all_rows_containing_nan(diffs)
 
+    diffs_length_unpruned = diffs.shape[0]
     if prune:
         diffs_pruned = prune(diffs)
     else:
         diffs_pruned = diffs
 
-    # TODO Check these variables, why am i using loop variables outside the loop? Also why am i pruning again here?
-    oob_count = over_thresh_unpruned.shape[0] - over_thresh.shape[0]
+    diffs_length_pruned = diffs.shape[0]
+    # Not very clean, but since pruning is only considering coordinates (and not values) this gives an accurate number
+    # for the out of bounds points (ignoring silently dropped ones)
+    oob_count = diffs_length_unpruned - diffs_length_pruned
+
     new_point_count = 0
-    if new_points is not None:
+    if not np.array_equal(new_points, np.zeros((1, N))):
         new_point_count = new_points.shape[0]
-    max_diff = max(diffs_pruned[:,-1])
+
+    # To determine the maximum difference, we need to consider "both directions"
+    # i.e. a relative difference of 0.1 is larger than a relative difference of 2
+    # -> take the log, use the absolute biggest log, determine original difference from that
+    logdiff = np.log10(diffs_pruned[:,-1])
+    log_max_diff = max(np.abs(logdiff))
+    max_diff = 10**log_max_diff
+    #max_diff = max(diffs_pruned[:,-1])
 
     log("Interpolated and sampled using Delaunay Triangulation\n")
     log("\tTime:".ljust(50) + str(round(time.time() - start, 2)) + "s\n")
@@ -456,7 +474,7 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         str(points.shape[0]) + " (" +
         str(round(new_point_count / points.shape[0], 2)) + ")\n"
     )
-    log("\tMaximum difference:".ljust(50) + str(max_diff) + "\n")
+    log("\tMaximum relative difference:".ljust(50) + str(max_diff) + "\n")
 
     if new_points is not None:
         new_points = new_points[1:] # Remove zeros used to create array

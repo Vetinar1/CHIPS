@@ -49,7 +49,7 @@ def view_slice(points, begin, end, steps, filename=None):
         interp_coordinates
     )[0]
 
-    plt.plot(np.linspace(0, 1, steps), interpolated)
+    plt.plot(np.linspace(0, 1, steps), interpolated[:,-1])
     plt.xlabel("x: " + str(begin) + " to " + str(end))
     plt.ylabel("Ctot")
     plt.yscale("log")

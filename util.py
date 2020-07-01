@@ -1,4 +1,5 @@
 import os
+import numpy as np
 
 def prod(iterable):
     """
@@ -62,3 +63,14 @@ def get_pruning_function(dims):
         return points[mask]
 
     return prune
+
+
+def drop_all_rows_containing_nan(array):
+    """
+    Returns a copy of the array that lacks all rows that originally contained a np.nan value.
+
+    :param array:
+    :return:
+    """
+    # https://stackoverflow.com/questions/22032668/numpy-drop-rows-with-all-nan-or-0-values
+    return array[~np.all(np.isnan(array, axis=1))]

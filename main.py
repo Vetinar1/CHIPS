@@ -10,14 +10,14 @@ NUMBER_OF_PARTITIONS = 10
 THRESHOLD = 0.1                 # Max difference between interpolated and analytic values
 OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
 MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
-MAX_ITERATIONS = None           # Maximum number of iterations before aborting
+                                # in dex
+MAX_ITERATIONS = 20             # Maximum number of iterations before aborting
 MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
 MAX_TIME = 3600                 # Maximum runtime in seconds
 PLOT_RESULTS = True
 RANDOM_NEW_POINTS = 10          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
 
-# TODO: Fix divide by 0 in IDW
 if __name__ == "__main__":
     time_start = time.time()
     logfile = open("logfile", "w")
@@ -30,8 +30,8 @@ if __name__ == "__main__":
     # Radiation background: Unsolved problem
     # By convention these are always used in this order, i.e. a point is given by
     # [T, nH, value] right now and will later be given by [T, nH, Z, z, value] for example
-    T_min = 0.5
-    T_max = 1.5
+    T_min = 2
+    T_max = 6
     T_init_steps = 7
 
     nH_min = -4
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     nH_init_steps = 7
 
     dimensions = [[T_min, T_max, T_init_steps], [nH_min, nH_max, nH_init_steps]]
-    points = initialize_points(dimensions, logfile)
+    points = initialize_points(dimensions, logfile, add_grid=True)
     prune = get_pruning_function(dimensions)
     init_point_count = points.shape[0]
 
@@ -50,7 +50,6 @@ if __name__ == "__main__":
         point_count = points.shape[0]
         logfile.write("Iteration ".ljust(50) + str(iteration) + "\n")
         logfile.write("Number of points:".ljust(50) + str(point_count) + "\n")
-        thresh_points = 0
 
         time1 = time.time()
         prev_length = points.shape[0]
@@ -64,9 +63,11 @@ if __name__ == "__main__":
             points,
             THRESHOLD,
             partitions=10,
-            logfile=logfile
+            logfile=logfile,
+            prune=prune
         )
 
+        # Note: Double pruning...
         in_bounds_points = prune(points)
         in_bounds_count = in_bounds_points.shape[0]
 
