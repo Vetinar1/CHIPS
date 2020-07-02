@@ -171,13 +171,15 @@ def initialize_points(dimensions=None, logfile=None, add_grid=False, cache_folde
 
 
 
-def cloudy_evaluate_points(points, Z=0, z=0, jobs=12, cache_folder="cache/"):
+def cloudy_evaluate_points(points, Z=0, z=0, jobs=12, cache_folder="cache/", cloudy_exe="cloudy/source/cloudy.exe"):
     """
 
     :param points:      Numpy array of points in parameter space to evaluate
                         Right now: (npoints, [T, hden])
     :param z            redshift
     :param jobs         no of parallel executions
+    :param cache_folder
+    :param cloudy_exe   Location of cloudy.exe
     :return:
     """
     # Step 1: Read radiation field
@@ -237,7 +239,7 @@ end of line
 
     # Step 3: Execute cloudy runs
     #result = subprocess.run(["parallel", "-j12", "--progress", "'source/cloudy.exe -r'", ":::: filenames"])
-    os.system("parallel -j" + str(jobs) + " 'source/cloudy.exe -r' :::: filenames")
+    os.system("parallel -j" + str(jobs) + " '" + cloudy_exe + " -r' :::: filenames")
 
     # Step 4: Read cooling data
     # for now only Ctot
@@ -294,8 +296,13 @@ def interpolate_delaunay(points, interp_coords):
             np.inner(points[simplices[j], -1], weights[j])
         )
 
+    interpolated = np.array(interpolated)
+    # reshape for hstack
+    interpolated = np.reshape(interpolated, (interpolated.shape[0], 1))
+
     ignored_mask = simplex_indices == -1
-    return np.hstack((valid_coords, np.array(interpolated))), ignored_mask, tri
+
+    return np.hstack((valid_coords, interpolated)), ignored_mask, tri
 
 
 
@@ -385,8 +392,10 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
             # At this point I gave up trying to find a vectorized solution.
             ccoords = []    # cartesian
 
-            # reconstruct simplices from other function, we need it here
-            simplices = tri.simplices[~ignored_mask]
+            # get simplices of points where we need to draw new samples
+            simplex_indices = tri.find_simplex(over_thresh[:,:-1])
+            #simplex_indices = simplex_indices[~ignored_mask]
+            simplices = tri.simplices[simplex_indices]
             for j in range(bcoords.shape[0]):
                 ccoords.append([])
 
@@ -436,7 +445,10 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         diffs_view = diffs[~mask]
         # diffs_view[ ignored_mask, -1] = np.abs(diffs_view[ ignored_mask, -1] / idw_points[:, -1] - 1)
         diffs_view[ ignored_mask, -1] = np.nan
-        diffs_view[~ignored_mask, -1] = np.abs(diffs_view[~ignored_mask, -1] / orig_points[:, -1] - 1)
+        #diffs_view[~ignored_mask, -1] = np.abs(diffs_view[~ignored_mask, -1] / interp_points[:, -1] - 1)
+        diffs_view[~ignored_mask, -1] = np.abs(
+            np.log10(interp_points[:,-1]) - np.log10(orig_points[:,-1])
+        )
         diffs[~mask] = diffs_view
 
     # Note: Continuation of the silent dropping of non-interpolated values
@@ -460,10 +472,11 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
     # To determine the maximum difference, we need to consider "both directions"
     # i.e. a relative difference of 0.1 is larger than a relative difference of 2
     # -> take the log, use the absolute biggest log, determine original difference from that
-    logdiff = np.log10(diffs_pruned[:,-1])
-    log_max_diff = max(np.abs(logdiff))
-    max_diff = 10**log_max_diff
-    #max_diff = max(diffs_pruned[:,-1])
+    #print(diffs_pruned)
+    # logdiff = np.log10(diffs_pruned[:,-1])
+    # log_max_diff = max(np.abs(logdiff))
+    # max_diff = 10**log_max_diff
+    max_diff = max(diffs_pruned[:,-1])
 
     log("Interpolated and sampled using Delaunay Triangulation\n")
     log("\tTime:".ljust(50) + str(round(time.time() - start, 2)) + "s\n")
@@ -474,12 +487,87 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         str(points.shape[0]) + " (" +
         str(round(new_point_count / points.shape[0], 2)) + ")\n"
     )
-    log("\tMaximum relative difference:".ljust(50) + str(max_diff) + "\n")
+    log("\tMaximum (log) difference:".ljust(50) + str(max_diff) + "\n")
 
     if new_points is not None:
         new_points = new_points[1:] # Remove zeros used to create array
 
     return new_points, over_thresh_count, max_diff
+
+
+def draw_points_not_in_threshold(dimensions, points, threshold, prune=None, partitions=5):
+    """
+    Plots several diagram helping to understand which points are over threshold, out of bounds etc.
+
+    Contains mostly code copied from interpolate_and_sample_delaunay
+
+    :param dimensions
+    :param points:
+    :param threshold:
+    :param prune:
+    :return:
+    """
+    over_thresh_total = np.zeros((1, points.shape[1]))
+
+    for i in range(partitions):
+        mask = np.ones(points.shape[0], dtype=bool)
+        mask[i::partitions] = False     # extract every nth point starting at i
+
+        a = points[mask]    # all points EXCEPT some
+        b = points[~mask]   # only SOME of the points
+
+        interp_points, ignored_mask, tri = interpolate_delaunay(a, b[:,:-1])
+        orig_points = b[~ignored_mask]  # for comparison against interp_points
+
+
+        # Points which are over given threshold
+        # log10s because I want to use the threshold in dex
+        over_thresh_unpruned = orig_points[
+            np.abs(
+                np.log10(interp_points[:,-1]) - np.log10(orig_points[:,-1])
+            ) > threshold
+        ]
+
+        # Remove points outside considered parameter space
+        if prune:
+            over_thresh = prune(over_thresh_unpruned)
+        else:
+            over_thresh = over_thresh_unpruned
+
+        over_thresh_total = np.vstack((over_thresh_total, over_thresh))
+
+    over_thresh_total = over_thresh_total[1:]
+
+    plt.title(r"Over threshold only")
+    plt.xlim(dimensions[0][0] - 1, dimensions[0][1] + 1) # T
+    plt.xlabel("log T/K")
+    plt.ylim(dimensions[1][0] - 1, dimensions[1][1] + 1) # nH
+    plt.ylabel(r"log $n_H$/cm$^{-3}$")
+    plt.scatter(over_thresh_total[:, 0], over_thresh_total[:, 1], c=over_thresh_total[:, 2], marker=".", s=0.5, cmap="jet")
+    rect = patches.Rectangle((dimensions[0][0], dimensions[1][0]),
+                             dimensions[0][1] - dimensions[0][0],
+                             dimensions[1][1] - dimensions[1][0], linewidth=1, edgecolor='k',
+                             facecolor='none')
+    plt.gca().add_patch(rect)
+    plt.show()
+    plt.close()
+
+
+    plt.title(r"All points, red over threshold")
+    plt.xlim(dimensions[0][0] - 1, dimensions[0][1] + 1) # T
+    plt.xlabel("log T/K")
+    plt.ylim(dimensions[1][0] - 1, dimensions[1][1] + 1) # nH
+    plt.ylabel(r"log $n_H$/cm$^{-3}$")
+    plt.scatter(points[:, 0], points[:, 1], c="blue", marker=".", s=0.5)
+    plt.scatter(over_thresh_total[:, 0], over_thresh_total[:, 1], c="red", marker=".", s=0.5)
+    rect = patches.Rectangle((dimensions[0][0], dimensions[1][0]),
+                             dimensions[0][1] - dimensions[0][0],
+                             dimensions[1][1] - dimensions[1][0], linewidth=1, edgecolor='k',
+                             facecolor='none')
+    plt.gca().add_patch(rect)
+    plt.show()
+    plt.close()
+
 
 
 

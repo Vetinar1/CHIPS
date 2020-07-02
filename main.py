@@ -5,7 +5,7 @@ from util import *
 from cloudy_optimizer import *
 
 
-NUMBER_OF_JOBS = 40
+NUMBER_OF_JOBS = 12
 NUMBER_OF_PARTITIONS = 10
 THRESHOLD = 0.1                 # Max difference between interpolated and analytic values
 OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
@@ -13,10 +13,12 @@ MAX_DIFF = 0.5                  # Maximum difference that may exist between inte
                                 # in dex
 MAX_ITERATIONS = 20             # Maximum number of iterations before aborting
 MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
-MAX_TIME = 3600                 # Maximum runtime in seconds
+MAX_TIME = 0.33*3600                 # Maximum runtime in seconds
 PLOT_RESULTS = True
 RANDOM_NEW_POINTS = 10          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
+
+
 
 if __name__ == "__main__":
     time_start = time.time()
@@ -39,6 +41,16 @@ if __name__ == "__main__":
     nH_init_steps = 7
 
     dimensions = [[T_min, T_max, T_init_steps], [nH_min, nH_max, nH_init_steps]]
+
+
+    points = load_all_points_from_cache("run4/cache/")
+    prune = get_pruning_function(dimensions)
+
+    draw_points_not_in_threshold(dimensions, points, THRESHOLD, prune, 10)
+
+    exit()
+
+
     points = initialize_points(dimensions, logfile, add_grid=True)
     prune = get_pruning_function(dimensions)
     init_point_count = points.shape[0]

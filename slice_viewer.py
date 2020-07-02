@@ -25,7 +25,7 @@ def get_ndim_linear_interp(point1, point2):
     return ndim_linear_interp
 
 
-def view_slice(points, begin, end, steps, filename=None):
+def view_slice(points, begin, end, steps, filename=None, title=None):
     """
     Interpolate steps points on a line between begin coordinates and end coordinates. Plot results.
 
@@ -50,13 +50,19 @@ def view_slice(points, begin, end, steps, filename=None):
     )[0]
 
     plt.plot(np.linspace(0, 1, steps), interpolated[:,-1])
+    if title:
+        plt.title(title)
     plt.xlabel("x: " + str(begin) + " to " + str(end))
     plt.ylabel("Ctot")
     plt.yscale("log")
-    plt.show()
+    if filename:
+        plt.savefig(filename)
+    else:
+        plt.show()
+    plt.close()
 
 
 if __name__ == "__main__":
-    points = load_all_points_from_cache(cache_folder="run2/cache/")
+    points = load_all_points_from_cache(cache_folder="run4/cache/")
     for i in range(-3, 3):
-        view_slice(points, [0.51, i], [1.49, i], 100)
+        view_slice(points, [2.01, i], [5.99, i], 100, title=r"$n_H = " + str(i) + "$", filename="n_H_" + str(i))

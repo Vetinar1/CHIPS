@@ -73,4 +73,4 @@ def drop_all_rows_containing_nan(array):
     :return:
     """
     # https://stackoverflow.com/questions/22032668/numpy-drop-rows-with-all-nan-or-0-values
-    return array[~np.all(np.isnan(array, axis=1))]
+    return array[np.all(~np.isnan(array), axis=1)]
