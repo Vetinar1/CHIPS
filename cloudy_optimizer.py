@@ -56,24 +56,46 @@ def get_base_filename_from_parameters(T, nH, Z, z):
     return "T_" + str(T) + "__nH_" + str(nH) + "__Z_" + str(Z) + "__z_" + str(z) + "_"
 
 
-def load_point_from_cache(filename, cache_folder="cache/"):
+def load_point_from_cache(filename, num_coords, cache_folder="cache/"):
     """
     Loads point from filename in cache_folder.
 
     TODO: Generalize to arbitrary coordinates
 
     :param filename:
-    :return:        A (1, M+1) numpy array containing the point
+    :param num_coords:      Number of coordinates to use. Order T, nH, Z, z, ...
+                            1 = only T, 2 = T and nH, ...
+    :return:                A (1, num_coords+1) numpy array containing the point
     """
 
     point = []
     # positive lookbehinds and lookaheads
-    point.append(
-        float(re.search(r"(?<=T_)[^_]+(?=_)", filename)[0])
-    )
-    point.append(
-        float(re.search(r"(?<=nH_)[^_]+(?=_)", filename)[0])
-    )
+
+    while True:
+        point.append(
+            float(re.search(r"(?<=T_)[^_]+(?=_)", filename)[0])
+        )
+
+        if num_coords == 1:
+            break
+
+        point.append(
+            float(re.search(r"(?<=nH_)[^_]+(?=_)", filename)[0])
+        )
+
+        if num_coords == 2:
+            break
+
+        point.append(
+            float(re.search(r"(?<=Z_)[^_]+(?=_)", filename)[0])
+        )
+
+        if num_coords == 3:
+            break
+
+        break
+
+
 
     # Right now I am only using Ctot for testing purposes
     point.append(
@@ -83,17 +105,19 @@ def load_point_from_cache(filename, cache_folder="cache/"):
     return np.array(point)
 
 
-def load_all_points_from_cache(cache_folder="cache/"):
+def load_all_points_from_cache(num_coords, cache_folder="cache/"):
     """
     Load all points from all valid files in cache_folder.
 
     TODO: Generalize to arbitrary coordinates
 
+    :param num_coords:      Number of coordinates to use. Order T, nH, Z, z, ...
+                            1 = only T, 2 = T and nH, ...
     :param cache_folder:
     :return:
     """
     directory = os.fsencode(cache_folder)
-    points = np.zeros((1, 3)) # TODO: (1, len(shape) + 1)
+    points = np.zeros((1, num_coords+1))
 
     for file in os.listdir(directory):
         filename = os.fsdecode(file)
@@ -101,7 +125,7 @@ def load_all_points_from_cache(cache_folder="cache/"):
             points = np.vstack(
                 (
                     points,
-                    load_point_from_cache(filename[:-len(".cool")], cache_folder)
+                    load_point_from_cache(filename[:-len(".cool")], num_coords, cache_folder)
                 )
             )
 
@@ -111,7 +135,7 @@ def load_all_points_from_cache(cache_folder="cache/"):
     return points
 
 
-def initialize_points(dimensions=None, logfile=None, add_grid=False, cache_folder="cache/"):
+def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="cache/"):
     """
     Loads all points from cache. If less points than specified in dimensions are loaded, a grid will be generated
     according to dimensions, and the points at this grid evaluated.
@@ -135,25 +159,25 @@ def initialize_points(dimensions=None, logfile=None, add_grid=False, cache_folde
     # Establish initial grid; is only actually used if we dont find enough points in the cache, but it conveniently
     # gives us the shape so i do it first
     axes = []
-    shape = []
+    grid_shape = []     # not a numpy shape
 
     for dim in dimensions:
         axes.append(np.linspace(*dim))
 
     for axis in axes:
-        shape.append(axis.shape[0])
+        grid_shape.append(axis.shape[0])
 
 
     time1 = time.time()
     log("Initializing points\n")
-    points = load_all_points_from_cache(cache_folder)
+    points = load_all_points_from_cache(len(dimensions), cache_folder)
 
     time2 = time.time()
     log(str(round(time2-time1, 2)) + "s to load points from cache\n")
 
     # Create a grid points as specified in dimensions
-    if add_grid and points.shape[0] < prod(shape):
-        grid_points = np.zeros((prod(shape), len(shape) + 1))
+    if add_grid and points.shape[0] < prod(grid_shape):
+        grid_points = np.zeros((prod(grid_shape), len(grid_shape) + 1))
 
         for i, comb in enumerate(itertools.product(*axes)):
             grid_points[i, :-1] = np.array(comb)
@@ -162,7 +186,7 @@ def initialize_points(dimensions=None, logfile=None, add_grid=False, cache_folde
         points = np.vstack((points, grid_points))
 
         time3 = time.time()
-        log(str(round(time3-time2, 2)) + "s to generate and evaluate an additional " + str(prod(shape)) + " points\n")
+        log(str(round(time3-time2, 2)) + "s to generate and evaluate an additional " + str(prod(grid_shape)) + " points\n")
 
     log("\n\n")
 
@@ -171,33 +195,49 @@ def initialize_points(dimensions=None, logfile=None, add_grid=False, cache_folde
 
 
 
-def cloudy_evaluate_points(points, Z=0, z=0, jobs=12, cache_folder="cache/", cloudy_exe="cloudy/source/cloudy.exe"):
+def cloudy_evaluate_points(points, jobs=12, cache_folder="cache/", cloudy_exe="cloudy/source/cloudy.exe"):
     """
 
     :param points:      Numpy array of points in parameter space to evaluate
-                        Right now: (npoints, [T, hden])
+                        Shape (N, M+1)
+                        Coordinate order: T, nH, Z, z
     :param z            redshift
     :param jobs         no of parallel executions
     :param cache_folder
     :param cloudy_exe   Location of cloudy.exe
     :return:
     """
+    T = np.zeros(points.shape[0])
+    if points.shape[1] - 1 > 0:     # always subtract one to account for value field
+        T = points[:,0]
+
+    nH = np.zeros(points.shape[0])
+    if points.shape[1] - 1 > 1:
+        nH = points[:,1]
+
+    Z = np.zeros(points.shape[0])
+    if points.shape[1] - 1 > 2:
+        Z = points[:,2]
+
+    z = np.zeros(points.shape[0])
+
     # Step 1: Read radiation field
     with open("rad", "r") as file:
         rad = file.read()
 
     # Step 2: Build cloudy files
     input_files = []
-    for point in points:
-        filename = get_base_filename_from_parameters(point[0], point[1], Z, z)
+    for i, point in enumerate(points):
+        filename = get_base_filename_from_parameters(T[i], nH[i], Z[i], z[i])
         input_files.append(filename)
 
         with open(filename + ".in", "w") as file:
-            file.write('CMB redshift %.2f\n' % z)
+            file.write('CMB redshift %.2f\n' % z[i])
             #file.write('table HM12 redshift %.2f\n' % z)
-            file.write("metals " + str(Z) + "\n")
-            file.write("hden " + str(point[1]) + "\n")
-            file.write("constant temperature " + str(point[0]) +"\n")
+            #file.write("metals " + str(Z) + "\n")
+            file.write("metals " + str(Z[i]) + "\n")
+            file.write("hden " + str(nH[i]) + "\n")
+            file.write("constant temperature " + str(T[i]) +"\n")
             file.write('stop zone 1\n')
             file.write("iterate to convergence\n")
             file.write('print last\n')
@@ -271,7 +311,7 @@ def interpolate_delaunay(points, interp_coords):
 
     # Only consider those points which are inside of the triangulation area space.
     valid_coords   = interp_coords[simplex_indices != -1]
-    ignored_coords = interp_coords[simplex_indices == -1]
+    #ignored_coords = interp_coords[simplex_indices == -1]
 
     # Get the simplices and transforms containing the valid points
     simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
@@ -357,7 +397,7 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
 
 
         # Points which are over given threshold
-        # log10s because I want to use the threshold in dexp
+        # log10s because I want to use the threshold in dex
         over_thresh_unpruned = orig_points[
             np.abs(
                 np.log10(interp_points[:,-1]) - np.log10(orig_points[:,-1])
@@ -467,7 +507,10 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
 
     new_point_count = 0
     if not np.array_equal(new_points, np.zeros((1, N))):
-        new_point_count = new_points.shape[0]
+        new_point_count = new_points.shape[0] - 1 # account for the "starter" made of zeros
+
+    if new_points is not None:
+        new_points = new_points[1:]               # Remove zeros used to create array
 
     # To determine the maximum difference, we need to consider "both directions"
     # i.e. a relative difference of 0.1 is larger than a relative difference of 2
@@ -488,9 +531,6 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         str(round(new_point_count / points.shape[0], 2)) + ")\n"
     )
     log("\tMaximum (log) difference:".ljust(50) + str(max_diff) + "\n")
-
-    if new_points is not None:
-        new_points = new_points[1:] # Remove zeros used to create array
 
     return new_points, over_thresh_count, max_diff
 

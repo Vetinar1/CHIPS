@@ -1,12 +1,5 @@
-import subprocess
-import os
-from scipy import spatial, stats
-import numpy as np
-import itertools
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import time
-import re
+import pandas as pd
+import seaborn as sns
 from cloudy_optimizer import *
 
 
@@ -63,6 +56,34 @@ def view_slice(points, begin, end, steps, filename=None, title=None):
 
 
 if __name__ == "__main__":
+    print("Loading...")
     points = load_all_points_from_cache(cache_folder="run4/cache/")
-    for i in range(-3, 3):
-        view_slice(points, [2.01, i], [5.99, i], 100, title=r"$n_H = " + str(i) + "$", filename="n_H_" + str(i))
+    # for i in range(-3, 3):
+    #     view_slice(points, [2.01, i], [5.99, i], 100, title=r"$n_H = " + str(i) + "$", filename="n_H_" + str(i))
+
+    print("Converting...")
+    df_points = pd.DataFrame(
+        points,
+        columns=["Temperature", "n_H", "Value"]
+    )
+
+    print("Plotting...")
+    grid = sns.pairplot(
+        df_points.sample(1000),
+        #hue="Value",
+        diag_kind="hist",
+        vars=["Temperature", "n_H"],
+        markers=".",
+        plot_kws={
+            "s":3,
+            "marker":".",
+            "edgecolor":None
+        },
+        diag_kws={
+            "bins":50
+        },
+        height=3
+    )
+    print(len(df_points.index))
+    # grid.savefig("test.png")
+    plt.show()
