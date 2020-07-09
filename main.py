@@ -15,9 +15,9 @@ THRESHOLD = 0.1                 # Max difference between interpolated and analyt
 OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
 MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
                                 # in dex
-MAX_ITERATIONS = 1             # Maximum number of iterations before aborting
+MAX_ITERATIONS = 20             # Maximum number of iterations before aborting
 MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
-MAX_TIME = 0.33*3600                 # Maximum runtime in seconds
+MAX_TIME = 12*3600                 # Maximum runtime in seconds
 PLOT_RESULTS = True
 RANDOM_NEW_POINTS = 20          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
@@ -153,7 +153,7 @@ if __name__ == "__main__":
             del df_points
 
             timeB = time.time()
-            logfile.write(str(round(timeB - timeA, 2)) + "s to plot current iteration")
+            logfile.write(str(round(timeB - timeA, 2)) + "s to plot current iteration\n")
 
 
 
@@ -225,6 +225,8 @@ if __name__ == "__main__":
 
         time5 = time.time()
         logfile.write(str(round(time5 - time4, 2)) + "s to add " + str(RANDOM_NEW_POINTS) + " random new points\n")
+        logfile.write("Total elapsed time so far: " + str(round(time5 - time_start, 2)) + "s / " +
+                      seconds_to_human_readable(time5 - time_start))
 
         logfile.write("\n\n")
 
@@ -235,18 +237,13 @@ if __name__ == "__main__":
     time_end = time.time()
     elapsed = time_end - time_start
 
-    hours = (elapsed - (elapsed % 3600)) / 3600
-    seconds_no_hours = elapsed % 3600
-    minutes = (seconds_no_hours - (seconds_no_hours % 60)) / 60
-    seconds = seconds_no_hours % 60
+    elapsed_readable = seconds_to_human_readable(elapsed)
 
     logfile.write("Run complete; Calculated at least " +
                   str(points.shape[0] - init_point_count) + " new points (" +
                   str(points.shape[0]) + " total) in " +
                   str(round(elapsed, 2)) + "s / " +
-                  str(int(hours)) + "h " +
-                  str(int(minutes)) + "m " +
-                  str(round(seconds, 2)) + "s"
+                  elapsed_readable
     )
 
     logfile.close()

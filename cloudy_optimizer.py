@@ -9,6 +9,8 @@ import time
 import re
 from util import *
 
+CLOUDY_LOCATION = "source/cloudy.exe"
+
 
 def IDW(points, values, x, exp=1):
     """
@@ -195,7 +197,7 @@ def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="ca
 
 
 
-def cloudy_evaluate_points(points, jobs=12, cache_folder="cache/", cloudy_exe="cloudy/source/cloudy.exe"):
+def cloudy_evaluate_points(points, jobs=12, cache_folder="cache/", cloudy_exe=CLOUDY_LOCATION):
     """
 
     :param points:      Numpy array of points in parameter space to evaluate
