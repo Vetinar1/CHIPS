@@ -9,7 +9,7 @@ import time
 import re
 from util import *
 
-CLOUDY_LOCATION = "source/cloudy.exe"
+CLOUDY_LOCATION = "cloudy/source/cloudy.exe"
 
 
 def IDW(points, values, x, exp=1):
@@ -41,6 +41,23 @@ def IDW(points, values, x, exp=1):
     return interp
 
 
+def compile_to_dataframe(num_coords, folder):
+    """
+    Loads all points from the files in the given folder and returns them as a dataframe.
+
+    :param folder:
+    :return:
+    """
+    dim_names = ["Temperature", "n_H", "Metallicity", "Redshift"]
+    points = load_all_points_from_cache(num_coords, folder)
+    df_points = pd.DataFrame(
+        points,
+        columns=[dim_names[i] for i in range(num_coords)] + ["Value"]
+    )
+
+    return df_points
+
+
 def get_base_filename_from_parameters(T, nH, Z, z):
     """
     Returns filenames for cloudy to use. Does not append suffixes, i.e. returns "filename" instead of "filename.in",
@@ -60,7 +77,7 @@ def get_base_filename_from_parameters(T, nH, Z, z):
 
 def load_point_from_cache(filename, num_coords, cache_folder="cache/"):
     """
-    Loads point from filename in cache_folder.
+    Loads point from filename in cache_folder. Does not check subfolders.
 
     TODO: Generalize to arbitrary coordinates
 
@@ -109,7 +126,7 @@ def load_point_from_cache(filename, num_coords, cache_folder="cache/"):
 
 def load_all_points_from_cache(num_coords, cache_folder="cache/"):
     """
-    Load all points from all valid files in cache_folder.
+    Load all points from all valid files in cache_folder. Includes subfolders.
 
     TODO: Generalize to arbitrary coordinates
 
@@ -118,16 +135,19 @@ def load_all_points_from_cache(num_coords, cache_folder="cache/"):
     :param cache_folder:
     :return:
     """
-    directory = os.fsencode(cache_folder)
+    filenames = []
+    for dirpath, dirnames, fnames in os.walk(cache_folder):
+        filenames += [os.path.join(dirpath, fname) for fname in fnames]
+
     points = np.zeros((1, num_coords+1))
 
-    for file in os.listdir(directory):
+    for file in filenames:
         filename = os.fsdecode(file)
         if filename.endswith(".cool"):
             points = np.vstack(
                 (
                     points,
-                    load_point_from_cache(filename[:-len(".cool")], num_coords, cache_folder)
+                    load_point_from_cache(filename[:-len(".cool")], num_coords, cache_folder="") # folder contained in names
                 )
             )
 
@@ -184,7 +204,10 @@ def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="ca
         for i, comb in enumerate(itertools.product(*axes)):
             grid_points[i, :-1] = np.array(comb)
 
-        grid_points = cloudy_evaluate_points(grid_points)
+        if not os.path.exists(cache_folder + "iteration0"):
+            os.system("mkdir {}iteration0".format(cache_folder))
+
+        grid_points = cloudy_evaluate_points(grid_points, cache_folder=cache_folder + "iteration0")
         points = np.vstack((points, grid_points))
 
         time3 = time.time()
@@ -289,8 +312,9 @@ end of line
         points[i, -1] = np.loadtxt(filename + ".cool", usecols=3)
 
     # Step 5: Move files to cache
-    pattern = get_base_filename_from_parameters("*", "*", "*", "*") + "*"
-    os.system("mv " + pattern + " " + cache_folder)
+    pattern = get_base_filename_from_parameters("-?[0-9\.]+", "-?[0-9\.]+", "-?[0-9\.]+", "-?[0-9\.]+") + "-?[0-9\.]+"
+    #os.system("mv " + pattern + " " + cache_folder)
+    os.system("ls | grep -P {} | xargs -I % -n 1000 mv -t {} %".format(pattern, cache_folder))
 
     return points
 

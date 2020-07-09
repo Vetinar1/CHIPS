@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import pandas as pd
-from cloudy_optimizer import load_all_points_from_cache
 
 def prod(iterable):
     """
@@ -76,23 +75,6 @@ def drop_all_rows_containing_nan(array):
     """
     # https://stackoverflow.com/questions/22032668/numpy-drop-rows-with-all-nan-or-0-values
     return array[np.all(~np.isnan(array), axis=1)]
-
-
-def compile_to_dataframe(num_coords, folder):
-    """
-    Loads all points from the files in the given folder and returns them as a dataframe.
-
-    :param folder:
-    :return:
-    """
-    dim_names = ["Temperature", "n_H", "Metallicity", "Redshift"]
-    points = load_all_points_from_cache(num_coords, folder)
-    df_points = pd.DataFrame(
-        points,
-        columns=[dim_names[i] for i in range(num_coords)] + ["Value"]
-    )
-
-    return df_points
 
 
 def seconds_to_human_readable(seconds):

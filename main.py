@@ -9,15 +9,15 @@ import pandas as pd
 sns.set()
 
 
-NUMBER_OF_JOBS = 40
+NUMBER_OF_JOBS = 12
 NUMBER_OF_PARTITIONS = 10
 THRESHOLD = 0.1                 # Max difference between interpolated and analytic values in dex
 OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
 MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
                                 # in dex
-MAX_ITERATIONS = 20             # Maximum number of iterations before aborting
+MAX_ITERATIONS = 2             # Maximum number of iterations before aborting
 MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
-MAX_TIME = 12*3600                 # Maximum runtime in seconds
+MAX_TIME = 0.1*3600                 # Maximum runtime in seconds
 PLOT_RESULTS = True
 RANDOM_NEW_POINTS = 20          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     dimensions = [
         [T_min, T_max, T_init_steps],
         [nH_min, nH_max, nH_init_steps],
-        [Z_min, Z_max, Z_init_steps]
+        #[Z_min, Z_max, Z_init_steps]
     ]
 
 
@@ -111,20 +111,6 @@ if __name__ == "__main__":
         in_bounds_points = prune(points)
         in_bounds_count = in_bounds_points.shape[0]
 
-        # if PLOT_RESULTS:
-        #     # TODO: Does not generalize
-        #     plt.title(r"$C_{tot}$ in erg/cm$^3$/s")
-        #     plt.xlim(T_min-1, T_max+1)
-        #     plt.xlabel("log T/K")
-        #     plt.ylim(nH_min-1, nH_max+1)
-        #     plt.ylabel(r"log $n_H$/cm$^{-3}$")
-        #     plt.scatter(points[:, 0], points[:, 1], c=points[:, 2], marker=".", s=0.5, cmap="jet")
-        #     plt.colorbar(cmap="jet")
-        #     rect = patches.Rectangle((T_min, nH_min), T_max - T_min, nH_max - nH_min, linewidth=1, edgecolor='k', facecolor='none')
-        #     plt.gca().add_patch(rect)
-        #     plt.savefig("iteration" + str(iteration) + ".png")
-        #     plt.close()
-
         if PLOT_RESULTS:
             timeA = time.time()
             # Seaborn wants a dataframe so lets convert...
@@ -132,11 +118,25 @@ if __name__ == "__main__":
                 points,
                 columns=[dim_names[i] for i in range(len(dimensions))] + ["Value"]
             )
+            df_points_new = compile_to_dataframe(
+                len(dimensions),
+                "cache/iteration{}".format(iteration-1)
+            )
+            old_length = len(df_points.index)
+            df_points = pd.concat([df_points, df_points_new], ignore_index=True)
+            df_points["New Points"] = df_points.duplicated(keep=False)
+            df_points = df_points.iloc[:old_length]
+
+            df_points.loc[df_points["New Points"] == True, "New Points"] = "Latest Iteration"
+            df_points.loc[df_points["New Points"] == False, "New Points"] = "Older Iterations"
+
+
             grid = sns.pairplot(
                 df_points,
                 # hue="Value",
                 diag_kind="hist",
                 vars=[dim_names[i] for i in range(len(dimensions))],
+                hue="New Points",
                 markers=".",
                 plot_kws={
                     "s": 1,
@@ -151,6 +151,7 @@ if __name__ == "__main__":
             grid.savefig("iteration" + str(iteration) + ".png")
 
             del df_points
+            del df_points_new
 
             timeB = time.time()
             logfile.write(str(round(timeB - timeA, 2)) + "s to plot current iteration\n")
@@ -196,9 +197,12 @@ if __name__ == "__main__":
 
 
         time3 = time.time()
+        if not os.path.exists("cache/iteration{}".format(iteration)):
+            os.system("mkdir cache/iteration{}".format(iteration))
+
         if new_points is not None:
             new_points = np.hstack((new_points, np.zeros((new_points.shape[0], 1))))
-            new_points = cloudy_evaluate_points(new_points)
+            new_points = cloudy_evaluate_points(new_points, cache_folder="cache/iteration{}".format(iteration))
             time4 = time.time()
             points = np.vstack((points, new_points))
 
@@ -215,7 +219,7 @@ if __name__ == "__main__":
 
         random_points = np.hstack((random_points, np.zeros((random_points.shape[0], 1))))
         random_points = random_points[1:]   # remove zeros used to create array
-        random_points = cloudy_evaluate_points(random_points)
+        random_points = cloudy_evaluate_points(random_points, cache_folder="cache/iteration{}".format(iteration))
         points = np.vstack(
             (
                 points,
