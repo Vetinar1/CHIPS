@@ -15,7 +15,7 @@ THRESHOLD = 0.1                 # Max difference between interpolated and analyt
 OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
 MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
                                 # in dex
-MAX_ITERATIONS = 2             # Maximum number of iterations before aborting
+MAX_ITERATIONS = 3             # Maximum number of iterations before aborting
 MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
 MAX_TIME = 0.1*3600                 # Maximum runtime in seconds
 PLOT_RESULTS = True
@@ -87,6 +87,7 @@ if __name__ == "__main__":
 
     while True:
         iteration += 1
+        print(iteration)
         point_count = points.shape[0]
         logfile.write("Iteration ".ljust(50) + str(iteration) + "\n")
         logfile.write("Number of points:".ljust(50) + str(point_count) + "\n")
@@ -104,7 +105,8 @@ if __name__ == "__main__":
             THRESHOLD,
             partitions=10,
             logfile=logfile,
-            prune=prune
+            prune=prune,
+            iteration=iteration
         )
 
         # Note: Double pruning...
@@ -146,7 +148,7 @@ if __name__ == "__main__":
                 diag_kws={
                     "bins":50
                 },
-                height=3
+                height=6
             )
             grid.savefig("iteration" + str(iteration) + ".png")
 

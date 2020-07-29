@@ -90,3 +90,51 @@ def seconds_to_human_readable(seconds):
     seconds_left = seconds_no_hours % 60
 
     return str(int(hours)) + "h " + str(int(minutes)) + "m " + str(int(seconds_left)) + "s"
+
+
+def sample_simplex(simplex):
+    """
+    Function draw uniform samples from a simplex.
+    https://www.researchgate.net/publication/275348534_Picking_a_Uniformly_Random_Point_from_an_Arbitrary_Simplex
+
+    :param simplex:     The simplex to draw from. Numpy array containing the points of the simplex, shape
+                        (n+1, n) for a n-dimensional simplex.
+    :return:            n dimensional numpy array
+    """
+    n = simplex.shape[1]
+    z = np.random.random(n+2)
+    z[0] = 1
+    z[-1] = 0
+
+    l = np.zeros(n+2)
+    l[0] = 1
+
+    for j in range(1, n+1): # exlude first and last, they are 1 and 0
+        l[j] = np.power(z[j], 1/(n+1-j))
+
+    point = np.zeros(n)
+    for i in range(1, n+2):
+        point += simplex[i-1] * ( (1 - l[i]) * np.prod(l[:i]))  # simplex[i-1] because of 0 indexing
+
+    return point
+
+
+
+
+
+def sample_simplices(simplices):
+    """
+    Function to draw uniform samples in multiple simplices. For each given simplex one sample will be drawn.
+
+    :param simplices:   3d array containing the simplices: (m, n+1, n)
+                        m simplices
+                        n+1 points per simplex
+                        n dimensions
+    :return:            (m, n) dimensional numpy array
+    """
+    samples = np.zeros((simplices.shape[0], simplices.shape[2]))
+
+    for i in range(simplices.shape[0]):
+        samples[i] = sample_simplex(simplices[i])
+
+    return samples

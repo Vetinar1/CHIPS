@@ -21,6 +21,7 @@ def IDW(points, values, x, exp=1):
     :param x:           coordinates of point to interpolate at
     :param exp:         Exponent of weighting function; 1/2 = euclidean, 1 = squared euclidean etc
     :return:
+    
     """
     # Equalize shapes
     x = np.reshape(x, (1, x.shape[0]))
@@ -371,8 +372,11 @@ def interpolate_delaunay(points, interp_coords):
     return np.hstack((valid_coords, interpolated)), ignored_mask, tri
 
 
+def sign(x1, y1, x2, y2, x3, y3):
+    return (x1 - x3) * (y2 - y3) - (x2 - x3) * (y1 - y3)
 
-def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None, logfile=None):
+
+def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None, logfile=None, iteration=0):
     """
     Interpolates the given set of points using delaunay triangulation. The interpolated values are checked against
     threshold (absolute value). If the difference between interpolated and analytic value is not within threshold,
@@ -411,9 +415,11 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
     else:
         log = simple_print
 
-    for i in range(partitions):
+    fig, ax = plt.subplots(1, partitions, figsize=(10*partitions, 10))
+
+    for partition in range(partitions):
         mask = np.ones(points.shape[0], dtype=bool)
-        mask[i::partitions] = False     # extract every nth point starting at i
+        mask[partition::partitions] = False     # extract every nth point starting at i
 
         a = points[mask]    # all points EXCEPT some
         b = points[~mask]   # only SOME of the points
@@ -438,46 +444,40 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
 
         over_thresh_count += over_thresh.shape[0]
 
-        # Draw coordinates for new samples and convert them to cartesian
+        # Draw coordinates for new samples
+        # How to uniformly sample over a triangle:
+        # https://math.stackexchange.com/questions/18686/uniform-random-point-in-triangle
         # TODO Make separate function?
         if over_thresh.size > 0:
-
-            # Draw new *barycentric* coordinates; 1 for each new point, same number of dimensions
-            bcoords = np.random.random((over_thresh.shape[0], N))
-
-            for dim in range(1, bcoords.shape[1]):
-                # Make sure the coordinates do not sum up to more than 1
-                bcoords[:, dim] *= 1 - np.sum(bcoords[:, :dim], axis=1)
-
-            #print(bcoords)
-            assert(max(np.sum(bcoords, axis=1)) < 1)
-
-            # Add last - linearly dependent - coordinate
-            bcoords = np.hstack((bcoords, np.reshape(1 - np.sum(bcoords, axis=1), (bcoords.shape[0], 1))))
-
-            # At this point I gave up trying to find a vectorized solution.
-            ccoords = []    # cartesian
-
-            # get simplices of points where we need to draw new samples
             simplex_indices = tri.find_simplex(over_thresh[:,:-1])
             #simplex_indices = simplex_indices[~ignored_mask]
             simplices = tri.simplices[simplex_indices]
-            for j in range(bcoords.shape[0]):
-                ccoords.append([])
 
-                for k in range(N):
-                    ccoords[-1].append(
-                        np.sum(bcoords[j] * a[simplices[j], k])
-                    )
+            simplex_points = np.zeros((simplices.shape[0], simplices.shape[1], simplices.shape[1]-1))
 
-            new_points = np.vstack((new_points, ccoords))
+            for i in range(simplices.shape[0]):
+                simplex_points[i] = a[simplices[i], :-1]
+
+            samples = sample_simplices(simplex_points)
+            print(iteration, partition)
+            print(samples)
+
+            new_points = np.vstack((new_points, samples))
         else:
             log("WARNING: No points over threshold. Are you sure your parameters are tight enough? (partition " +
-                str(i) + "/" + str(partitions) + ")\n")
+                str(partition) + "/" + str(partitions) + ")\n")
 
         # end TODO
 
+        ax[partition].triplot(a[:,0], a[:,1], tri.simplices)
+        ax[partition].plot(a[:,0], a[:,1], "ko")
+        for j in range(over_thresh.shape[0]):
+            ax[partition].plot([over_thresh[j,0], samples[j][0]], [over_thresh[j,1], samples[j][1]], "red")
+            ax[partition].plot([over_thresh[j,0]], [over_thresh[j,1]], "ro")
 
+        ax[partition].set_title("Delaunay Partition " + str(partitions))
+        ax[partition].set_xlabel("T")
+        ax[partition].set_ylabel("nH")
 
         # # IDW
         # # NOTE: Currently, we do not draw new samples near IDW points. This should be okay since they are very few
@@ -516,6 +516,8 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
             np.log10(interp_points[:,-1]) - np.log10(orig_points[:,-1])
         )
         diffs[~mask] = diffs_view
+
+    fig.savefig("Partitions" + str(iteration) + ".png")
 
     # Note: Continuation of the silent dropping of non-interpolated values
     diffs = drop_all_rows_containing_nan(diffs)
