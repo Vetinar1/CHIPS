@@ -1,0 +1,189 @@
+Initializing points
+0.0s to load points from cache
+63.13s to generate and evaluate an additional 63 points
+
+
+Iteration                                         1
+Number of points:                                 63
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.06s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   4
+	Points not within threshold:                     38/63 (0.6)
+	Maximum difference:                              221888818.37136534
+36.96s to evaluate 37 new points
+10.36s to add 10 random new points
+
+
+Iteration                                         2
+Number of points:                                 110
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.05s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   4
+	Points not within threshold:                     76/110 (0.69)
+	Maximum difference:                              2693.4257191795277
+65.53s to evaluate 75 new points
+10.14s to add 10 random new points
+
+
+Iteration                                         3
+Number of points:                                 195
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.05s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   4
+	Points not within threshold:                     99/195 (0.51)
+	Maximum difference:                              9481.81537215154
+84.85s to evaluate 98 new points
+10.26s to add 10 random new points
+
+
+Iteration                                         4
+Number of points:                                 303
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.06s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   4
+	Points not within threshold:                     110/303 (0.36)
+	Maximum difference:                              9481.991225069016
+93.5s to evaluate 109 new points
+13.94s to add 10 random new points
+
+
+Iteration                                         5
+Number of points:                                 422
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.13s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   4
+	Points not within threshold:                     107/422 (0.25)
+	Maximum difference:                              54597.806065809906
+94.0s to evaluate 106 new points
+11.08s to add 10 random new points
+
+
+Iteration                                         6
+Number of points:                                 538
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.14s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   4
+	Points not within threshold:                     115/538 (0.21)
+	Maximum difference:                              802.2874195343732
+102.59s to evaluate 114 new points
+11.25s to add 10 random new points
+
+
+Iteration                                         7
+Number of points:                                 662
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.17s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   7
+	Points not within threshold:                     113/662 (0.17)
+	Maximum difference:                              70.29524554030466
+102.03s to evaluate 112 new points
+11.15s to add 10 random new points
+
+
+Iteration                                         8
+Number of points:                                 784
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.2s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   7
+	Points not within threshold:                     121/784 (0.15)
+	Maximum difference:                              20985.830932645993
+105.4s to evaluate 120 new points
+11.26s to add 10 random new points
+
+
+Iteration                                         9
+Number of points:                                 914
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.23s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   9
+	Points not within threshold:                     123/914 (0.13)
+	Maximum difference:                              5684.428118669022
+110.69s to evaluate 122 new points
+11.22s to add 10 random new points
+
+
+Iteration                                         10
+Number of points:                                 1046
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.26s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   10
+	Points not within threshold:                     126/1046 (0.12)
+	Maximum difference:                              79081.62319391362
+113.89s to evaluate 125 new points
+11.34s to add 10 random new points
+
+
+Iteration                                         11
+Number of points:                                 1181
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.29s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   10
+	Points not within threshold:                     127/1181 (0.11)
+	Maximum difference:                              1073.227288243402
+114.21s to evaluate 126 new points
+11.01s to add 10 random new points
+
+
+Iteration                                         12
+Number of points:                                 1317
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.33s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   10
+	Points not within threshold:                     131/1317 (0.1)
+	Maximum difference:                              6267.417112719803
+114.86s to evaluate 130 new points
+10.95s to add 10 random new points
+
+
+Iteration                                         13
+Number of points:                                 1457
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.35s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   14
+	Points not within threshold:                     128/1457 (0.09)
+	Maximum difference:                              1569890.0692897
+113.58s to evaluate 127 new points
+11.19s to add 10 random new points
+
+
+Iteration                                         14
+Number of points:                                 1594
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.38s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   14
+	Points not within threshold:                     136/1594 (0.09)
+	Maximum difference:                              29251.64893126802
+123.2s to evaluate 135 new points
+11.02s to add 10 random new points
+
+
+Iteration                                         15
+Number of points:                                 1739
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            0.42s
+	Out of bounds points (skipped)                   0
+	Points requiring IDW fallback:                   18
+	Points not within threshold:                     142/1739 (0.08)
+	Maximum difference:                              17002.459745976405
+157.56s to evaluate 141 new points
+17.5s to add 10 random new points
+
+
+Iteration                                         16
+Number of points:                                 1890
+Interpolated and sampled using Delaunay Triangulation
+	Time:                                            1.26s
