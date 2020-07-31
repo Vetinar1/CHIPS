@@ -9,7 +9,7 @@ import time
 import re
 from util import *
 
-CLOUDY_LOCATION = "cloudy/source/cloudy.exe"
+CLOUDY_LOCATION = "source/cloudy.exe"
 
 
 def IDW(points, values, x, exp=1):
@@ -459,8 +459,6 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
                 simplex_points[i] = a[simplices[i], :-1]
 
             samples = sample_simplices(simplex_points)
-            print(iteration, partition)
-            print(samples)
 
             new_points = np.vstack((new_points, samples))
         else:

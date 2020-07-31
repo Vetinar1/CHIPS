@@ -9,17 +9,17 @@ import pandas as pd
 sns.set()
 
 
-NUMBER_OF_JOBS = 12
+NUMBER_OF_JOBS = 40
 NUMBER_OF_PARTITIONS = 10
 THRESHOLD = 0.1                 # Max difference between interpolated and analytic values in dex
 OVER_THRESH_MAX_FRACTION = 0.1  # Fraction of points for which THRESHOLD may not hold at maximum
 MAX_DIFF = 0.5                  # Maximum difference that may exist between interpolated and analytic values anywhere
                                 # in dex
-MAX_ITERATIONS = 3             # Maximum number of iterations before aborting
+MAX_ITERATIONS = 20             # Maximum number of iterations before aborting
 MAX_STORAGE = 20                # Maximum storage that may be taken up by data before aborting; in GB
-MAX_TIME = 0.1*3600                 # Maximum runtime in seconds
+MAX_TIME = 10*3600                 # Maximum runtime in seconds
 PLOT_RESULTS = True
-RANDOM_NEW_POINTS = 20          # How many completely random new points to add each iteration
+RANDOM_NEW_POINTS = 40          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
 
 
