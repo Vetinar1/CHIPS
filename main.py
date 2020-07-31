@@ -56,6 +56,9 @@ if __name__ == "__main__":
     ]
 
 
+    margins = 0.1
+
+
     # points = load_all_points_from_cache("run4/cache/")
     # prune = get_pruning_function(dimensions)
     #
@@ -64,9 +67,10 @@ if __name__ == "__main__":
     # exit()
 
 
-    points = initialize_points(dimensions, logfile, add_grid=True)
+    points = initialize_points(dimensions, logfile, add_grid=True, margins=margins)
     prune = get_pruning_function(dimensions)
     init_point_count = points.shape[0]
+
 
     logfile.write("NUMBER_OF_PARTITIONS".ljust(50) + str(NUMBER_OF_PARTITIONS) + "\n")
     logfile.write("THRESHOLD (dex)".ljust(50) + str(THRESHOLD) + "\n")
@@ -87,7 +91,6 @@ if __name__ == "__main__":
 
     while True:
         iteration += 1
-        print(iteration)
         point_count = points.shape[0]
         logfile.write("Iteration ".ljust(50) + str(iteration) + "\n")
         logfile.write("Number of points:".ljust(50) + str(point_count) + "\n")
@@ -106,7 +109,8 @@ if __name__ == "__main__":
             partitions=10,
             logfile=logfile,
             prune=prune,
-            iteration=iteration
+            iteration=iteration,
+            dimensions=dimensions
         )
 
         # Note: Double pruning...

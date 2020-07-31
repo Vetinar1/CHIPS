@@ -8,6 +8,7 @@ import matplotlib.patches as patches
 import time
 import re
 from util import *
+import copy
 
 CLOUDY_LOCATION = "source/cloudy.exe"
 
@@ -158,7 +159,7 @@ def load_all_points_from_cache(num_coords, cache_folder="cache/"):
     return points
 
 
-def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="cache/"):
+def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="cache/", margins=0):
     """
     Loads all points from cache. If less points than specified in dimensions are loaded, a grid will be generated
     according to dimensions, and the points at this grid evaluated.
@@ -171,6 +172,8 @@ def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="ca
     :param logfile:         Logfile to write into. If none, print instead.
     :param add_grid:        If True a grid will be added like described, otherwise this step is skipped.
     :param cache_folder:    Folder containing the files
+    :param margins:         Margins around parameter space. Will be filled with points for interpolation, but these
+                            points will not be checked for accuracy.
     :return:
     """
     if logfile:
@@ -178,13 +181,19 @@ def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="ca
     else:
         log = simple_print
 
-
+    dimensions2 = copy.deepcopy(dimensions)
     # Establish initial grid; is only actually used if we dont find enough points in the cache, but it conveniently
     # gives us the shape so i do it first
     axes = []
     grid_shape = []     # not a numpy shape
 
-    for dim in dimensions:
+    # add margins
+    for i, dim in enumerate(dimensions2):
+        margin = margins * abs(dim[1] - dim[0])
+        dimensions2[i][0] -= margin
+        dimensions2[i][1] += margin
+
+    for dim in dimensions2:
         axes.append(np.linspace(*dim))
 
     for axis in axes:
@@ -193,7 +202,7 @@ def initialize_points(dimensions, logfile=None, add_grid=False, cache_folder="ca
 
     time1 = time.time()
     log("Initializing points\n")
-    points = load_all_points_from_cache(len(dimensions), cache_folder)
+    points = load_all_points_from_cache(len(dimensions2), cache_folder)
 
     time2 = time.time()
     log(str(round(time2-time1, 2)) + "s to load points from cache\n")
@@ -320,7 +329,7 @@ end of line
     return points
 
 
-def interpolate_delaunay(points, interp_coords):
+def interpolate_delaunay(points, interp_coords, margins=0):
     """
     Use points to interpolate at positions interp_coords using Delaunay triangulation.
     For a commented version see interpolate_and_sample_delaunay
@@ -376,7 +385,7 @@ def sign(x1, y1, x2, y2, x3, y3):
     return (x1 - x3) * (y2 - y3) - (x2 - x3) * (y1 - y3)
 
 
-def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None, logfile=None, iteration=0):
+def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None, logfile=None, iteration=0, margins=0, dimensions=None):
     """
     Interpolates the given set of points using delaunay triangulation. The interpolated values are checked against
     threshold (absolute value). If the difference between interpolated and analytic value is not within threshold,
@@ -396,6 +405,7 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
     :param prune:       Pruning function. Should take points in and return points. Use to remove points outside of
                         parameter space.
     :param logfile:     File object to write into. If none given, print instead.
+    :param margins:
     :return:            1. Numpy array; Shape (N, M). Coordinates of new points. May be None if no new points.
                         2. Number of points within pruning bounds that do not fulfill threshold condition
                         3. The maximum difference between analytic and interpolated points
@@ -427,6 +437,10 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         interp_points, ignored_mask, tri = interpolate_delaunay(a, b[:,:-1])
         orig_points = b[~ignored_mask]  # for comparison against interp_points
 
+        # # prune to ignore margines
+        # interp_points = prune(interp_points)
+        # orig_points = prune(orig_points)
+
 
         # Points which are over given threshold
         # log10s because I want to use the threshold in dex
@@ -436,7 +450,7 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
             ) > threshold
         ]
 
-        # Remove points outside considered parameter space
+        # Remove points outside considered parameter space / in margins
         if prune:
             over_thresh = prune(over_thresh_unpruned)
         else:
@@ -472,6 +486,10 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         for j in range(over_thresh.shape[0]):
             ax[partition].plot([over_thresh[j,0], samples[j][0]], [over_thresh[j,1], samples[j][1]], "red")
             ax[partition].plot([over_thresh[j,0]], [over_thresh[j,1]], "ro")
+
+            if dimensions:
+                rect = patches.Rectangle((dimensions[0][0], dimensions[1][0]), dimensions[0][1] - dimensions[0][0], dimensions[1][1] - dimensions[1][0], edgecolor="green", fill=False)
+                ax[partition].add_patch(rect)
 
         ax[partition].set_title("Delaunay Partition " + str(partitions))
         ax[partition].set_xlabel("T")
@@ -515,11 +533,12 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
         )
         diffs[~mask] = diffs_view
 
-    fig.savefig("Partitions" + str(iteration) + ".png")
+    fig.savefig("Partitions" + str(iteration) + ".png", bbox_inches="tight")
 
     # Note: Continuation of the silent dropping of non-interpolated values
     diffs = drop_all_rows_containing_nan(diffs)
 
+    # TODO: Double pruning?
     diffs_length_unpruned = diffs.shape[0]
     if prune:
         diffs_pruned = prune(diffs)
