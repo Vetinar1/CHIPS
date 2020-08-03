@@ -1,2 +1,5 @@
 venv/
 run*/cache
+.idea/
+__pycache__/
+cloudy/
