@@ -22,8 +22,6 @@ PLOT_RESULTS = True
 RANDOM_NEW_POINTS = 30          # How many completely random new points to add each iteration
 CACHE_FOLDER = "cache/"
 
-
-
 if __name__ == "__main__":
     time_start = time.time()
     logfile = open("logfile", "w")

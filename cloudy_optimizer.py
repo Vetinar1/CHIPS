@@ -268,9 +268,9 @@ def cloudy_evaluate_points(points, jobs=12, cache_folder="cache/", cloudy_exe=CL
 
         with open(filename + ".in", "w") as file:
             file.write('CMB redshift %.2f\n' % z[i])
-            #file.write('table HM12 redshift %.2f\n' % z)
+            file.write('table HM12 redshift %.2f\n' % z)
             #file.write("metals " + str(Z) + "\n")
-            file.write("metals " + str(Z[i]) + "\n")
+            file.write("metals " + str(Z[i]) + " log\n")
             file.write("hden " + str(nH[i]) + "\n")
             file.write("constant temperature " + str(T[i]) +"\n")
             file.write('stop zone 1\n')
@@ -472,7 +472,8 @@ def interpolate_and_sample_delaunay(points, threshold, partitions=5, prune=None,
             for i in range(simplices.shape[0]):
                 simplex_points[i] = a[simplices[i], :-1]
 
-            samples = sample_simplices(simplex_points)
+            #samples = sample_simplices(simplex_points)
+            samples = np.sum(simplex_points, axis=1) / simplices.shape[1]   # simple average
 
             new_points = np.vstack((new_points, samples))
         else:

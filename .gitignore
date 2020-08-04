@@ -3,3 +3,4 @@ run*/cache
 .idea/
 __pycache__/
 cloudy/
+*.tar.gz
