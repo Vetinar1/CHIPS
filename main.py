@@ -47,10 +47,11 @@ if __name__ == "__main__":
     Z_max = 0
     Z_init_steps = 3
 
+
     dimensions = [
         [T_min, T_max, T_init_steps],
         [nH_min, nH_max, nH_init_steps],
-        #[Z_min, Z_max, Z_init_steps]
+        [Z_min, Z_max, Z_init_steps]
     ]
 
 
