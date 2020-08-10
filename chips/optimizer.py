@@ -70,6 +70,14 @@ def sample(
     ####################################################################################################################
     ###############################################    Safety checks    ################################################
     ####################################################################################################################
+    # Python does not understand that ~ is home
+    cloudy_input = os.path.expanduser(cloudy_input)
+    cloudy_source_path = os.path.expanduser(cloudy_source_path)
+    output_folder = os.path.expanduser(output_folder)
+    if existing_data is not None:
+        existing_data = os.path.expanduser(existing_data)
+
+
     # Set up Output folder
     if not os.path.isdir(output_folder):
         os.mkdir(output_folder)
@@ -79,11 +87,10 @@ def sample(
             print("Aborting...")
             exit()
 
+
     # Make sure cloudy exists
-    # TODO: Always returns false
-    # if not os.path.exists(os.path.join(cloudy_source_path, "cloudy.exe")):
-    #     print(os.path.join(cloudy_source_path, "cloudy.exe"))
-    #     raise RuntimeError("No cloudy.exe found at: " + str(cloudy_source_path))
+    if not os.path.exists(os.path.join(cloudy_source_path, "cloudy.exe")):
+        raise RuntimeError("No cloudy.exe found at: " + str(cloudy_source_path))
 
     # Make sure all margins are given
     for key in param_space.keys():
@@ -122,7 +129,7 @@ def sample(
 
     print("Radiation background parameters:")
     for rad, edges in rad_params.items():
-        print(f"\t{rad}:\t{edges}\t\tMargins: {rad_params_margins[dim]}")
+        print(f"\t{rad}:\t{edges}\t\tMargins: {rad_params_margins[rad]}")
 
     print("Existing data".ljust(50) + str(existing_data))
     print("Points per dimension of initial grid ".ljust(50) + str(initial_grid))
@@ -145,9 +152,10 @@ def sample(
     ###################################################    Setup    ####################################################
     ####################################################################################################################
     # Compile coordinates and values into easily accessible lists
-    coordinates = list(param_space.keys()) + list(rad_params.keys())
+    coordinates = {**param_space, **rad_params} #list(param_space.keys()) + list(rad_params.keys())
+    coord_list  = list(coordinates.keys())  # guaranteed order
     values = ["values"]  # TODO
-    points = pd.DataFrame(columns=coordinates + values)
+    points = pd.DataFrame(columns=coord_list + values)
 
     # Load existing data if applicable
     if existing_data:
@@ -159,32 +167,54 @@ def sample(
             _load_existing_data(existing_data, filename_pattern, coordinates)
         )
 
+    print("Setting up grid")
     if initial_grid:
         grid_points = _set_up_grid(initial_grid, param_space, param_space_margins, rad_params, rad_params_margins)
+        points = pd.concat((points, grid_points))
 
+    # The "corners" of the parameter space will work as convex hull, ensuring that all other points are contained
+    # within and are thus valid in the Delaunay interpolation
+    corners = _get_corners(
+        _get_param_space_with_margins(
+            param_space,
+            param_space_margins,
+            rad_params,
+            rad_params_margins
+        )
+    )
 
     if not filename_pattern:
         filename_pattern = "__".join(
             ["_".join(
                 [c, "{" + str(c) + "}"]
-            ) for c in coordinates]
+            ) for c in coordinates.keys()]
         )
     else:
-        for c in coordinates:
+        for c in coordinates.keys():
             if "{" + str(c) + "}" not in filename_pattern:
-                raise RuntimeError("Invalid file pattern")
+                raise RuntimeError(f"Invalid file pattern: Missing {c}")
 
-    # TODO Measure time
+    # Rad bg required for all cloudy runs from here on
     rad_bg = _get_rad_bg_as_function(rad_params)
-    points = _cloudy_evaluate(cloudy_input, cloudy_source_path, output_folder, filename_pattern, points, rad_bg, n_jobs)
 
-    # number of dimensions
-    # TODO: Generalize for multiple values
+    time1 = time.time()
+    corners = _cloudy_evaluate(cloudy_input, cloudy_source_path, output_folder, filename_pattern, corners, rad_bg, n_jobs)
+    points = pd.concat((points, corners))
+    points = points.drop_duplicates(subset=coord_list, keep="last")
+    points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, output_folder, filename_pattern, points, rad_bg, n_jobs)
+    time2 = time.time()
+    print(round(time2 - time1, 2), "s to do initial evaluations")
+
+    assert (not points[values].isnull().to_numpy().any())
 
     ####################################################################################################################
     #################################################    Main Loop    ##################################################
     ####################################################################################################################
     iteration = 0
+    timeBeginLoop = time.time()
+
+    # number of dimensions
+    # TODO: Generalize for multiple values
     N = len(points.columns) - 1
     while True:
         iteration += 1
@@ -193,16 +223,18 @@ def sample(
         len_pre_drop =  len(points.index)
         points = points.drop_duplicates()
         len_post_drop = len(points.index)
+        n_dropped = len_pre_drop - len_post_drop
 
         if len_pre_drop > len_post_drop:
-            print("Dropped {} duplicate samples".format(len_pre_drop - len_post_drop))
+            print(f"Dropped {n_dropped} duplicate samples")
 
-        # For plotting the triangulation
+        # For plotting the triangulation TODO
         # if plot_iterations:
         #     fig, ax = plt.subplots(1, n_partitions, figsize=(10 * n_partitions, 10))
 
         new_points = pd.DataFrame(columns=coordinates)
 
+        timeA = time.time()
         for partition in range(n_partitions):
             subset = points.iloc[partition::n_partitions]
             bigset = pd.concat((points, subset)).drop_duplicates()
@@ -211,11 +243,13 @@ def sample(
             subset["interpolated"] = np.nan
 
             # dont consider points in margins
-            # TODO: Verify
-            # TODO: Make it so that corners are always included in each partition
-            #   => convex hull, dont need to be concerned with points not inside area
-            for param, edges in param_space.items():
-                subset = subset.loc[(subset[param] > edges[0]) & (subset[param] < edges[1])]
+            for c, edges in coordinates.items():
+                subset = subset.loc[(subset[c] > edges[0]) & (subset[c] < edges[1])]
+
+            # But ALWAYS include corners to ensure convex hull
+            subset = pd.concat((subset, corners))
+            subset = subset.drop_duplicates()
+
 
             # # Not sure this is necessary, just to be safe
             # subset.reset_index()
@@ -240,29 +274,29 @@ def sample(
 
             # 3. Interpolation
             # TODO vectorize
-            # TODO Verify index is continuous
-            for i in range(subset.index):
+            for i in subset.index:
                 subset.loc[i, "interpolated"] = np.inner(
                     points.loc[simplices[i], "values"], weights[i]
                 )
 
             assert(not subset["interpolated"].isnull().to_numpy().any())
 
-            # TODO After this point, all np.nans should be due to out of bounds or similar,
-            #   NOT due to errors while interpolating
-
             # 4. Find points over threshold
             # convert to log because the thresholds are given in dex
             subset.loc[:, ["values", "interpolated"]] = np.log10(
                 subset.loc[:, ["values", "interpolated"]]
             )
-            # Only keep points where the difference is over the threshold
-            subset["diff"] = subset.loc[np.abs(subset["interpolated"] - subset["values"]) > dex_threshold]
+            subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
 
-            # Draw new samples by finding geometric centers of the simplices containing the subset
+            # Draw new samples by finding geometric centers of the simplices containing the points over threshold
             if not subset[subset["diff"] > dex_threshold].empty:
-                # TODO: Reusing old variables is bad
-                simplex_indices = tri.find_simplex(points)
+                # TODO: Reusing old variables is not clean
+                simplex_indices = tri.find_simplex(
+                    subset.loc[
+                        subset["diff"] > dex_threshold,
+                        coord_list
+                    ].to_numpy()
+                )
                 simplices       = tri.simplices[simplex_indices]
 
                 # Shape: (N_simplices, N_points_per_simplex, N_coordinates_per_point)
@@ -273,11 +307,13 @@ def sample(
                 for i in range(simplices.shape[0]):
                     simplex_points[i] = bigset.loc[simplices[i], coordinates].to_numpy()
 
+                # new samples = averages (centers) of the points making up the simplices
                 samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
-                samples = pd.DataFrame(samples, columns=coordinates)
+                samples = pd.DataFrame(samples, columns=coord_list)
                 new_points = pd.concat((new_points, samples))
+                new_points = new_points.drop_duplicates()
             else:
-                print("No points over threshold in partition {}".format(partition))
+                print(f"No points over threshold in partition {partition}")
 
             # TODO: Triangulation plotting? Only really works in 2D
             # if plot_iterations:
@@ -300,10 +336,13 @@ def sample(
             # Write interpolated and diffs back into original points dataframe
             # TODO: IMPORTANT Verify this looks as expected after all partitions are done
             # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.join.html
-            points = pd.merge(points, subset, axis=1, join="outer", sort=False)
+            # points = pd.merge(points, subset, axis=1, join="outer", sort=False)
             # Note: This requires the index to be as in the original, so we CAN NOT use reset_index
             # at the beginning!
             points = points.join(subset)
+            assert(not subset.loc[:,["values", "interpolated"]].isnull().to_numpy().any())
+
+        timeB = time.time()
 
 
         # Calculate some stats/diagnostics
@@ -314,8 +353,8 @@ def sample(
         # points not in margins
         # TODO: Wasteful
         df_copy = points.copy(deep=True)
-        for param, edges in param_space.items():
-            df_copy = df_copy.loc[(df_copy[param] > edges[0]) & (df_copy[param] < edges[1])]
+        for c, edges in coordinates.items():
+            df_copy = df_copy.loc[(df_copy[c] > edges[0]) & (df_copy[c] < edges[1])]
         in_bounds_count = len(df_copy.index)
         del df_copy
 
@@ -330,19 +369,16 @@ def sample(
         max_diff = points["diff"].max()
 
 
-        print("Number of nans in interpolated: ", points["interpolated"].isnull().sum())
+        # print("Number of nans in interpolated: ", points["interpolated"].isnull().sum())
 
-        # TODO diagnostics
-        # log("Interpolated and sampled using Delaunay Triangulation\n")
-        # log("\tTime:".ljust(50) + str(round(time.time() - start, 2)) + "s\n")
-        # log("\tOut of bounds points (skipped)".ljust(50) + str(oob_count) + "\n")
-        # log("\tPoints requiring IDW fallback:".ljust(50) + str(outside) + "\n")
-        # log("\tPoints not within threshold:".ljust(50) +
-        #     str(new_point_count) + "/" +  # Equal to number of new samples
-        #     str(points.shape[0]) + " (" +
-        #     str(round(new_point_count / points.shape[0], 2)) + ")\n"
-        # )
-        # log("\tMaximum (log) difference:".ljust(50) + str(max_diff) + "\n")
+        # diagnostics
+        print("Total time to interpolate and sample:".ljust(50), seconds_to_human_readable(timeB - timeA))
+        print("Total points before sampling".ljust(50), total_count)
+        print("Points in core".ljust(50), in_bounds_count)
+        print("Points in margins".ljust(50), outside_bounds_count)
+        print(f"Points in core over threshold ({dex_threshold})".ljust(50), over_thresh_count, f"{over_thresh_max_fraction*100}%")
+        print("Number of new samples".ljust(50), len(new_points.index))
+        print("Largest interpolation error".ljust(50), max_diff)
 
         if plot_iterations:
             _plot_parameter_space(points, new_points, coordinates, output_folder, iteration)
@@ -362,7 +398,7 @@ def sample(
             break
 
         if max_iterations and iteration > max_iterations:
-            print("Reached maximum number of iterations ({}). Quitting.".format(max_iterations))
+            print(f"Reached maximum number of iterations ({max_iterations}). Quitting.")
             break
 
         if max_storage_gb:
@@ -370,22 +406,20 @@ def sample(
             output_size_gb = get_folder_size(output_folder) / gb_in_bytes
 
             if output_size_gb > max_storage_gb:
-                print("Reached maximum allowed storage ({} GB/{} GB). Quitting.".format(
-                    output_size_gb,
-                    max_storage_gb
-                ))
+                print(f"Reached maximum allowed storage ({output_size_gb} GB/{max_storage_gb} GB). Quitting.")
                 break
 
-        # if False: # TODO: Check for time. enable timestamps
-        #     print("Reached maximum calculation time ({}). Quitting".format(HUMAN_READABLE_TIME))
-        #     break
+        if max_time is not None and max_time > time.time() - timeBeginLoop:
+            print(f"Reached maximum calculation time ({seconds_to_human_readable(time.time() - timeBeginLoop)} " +
+                  f"/ {seconds_to_human_readable(max_time)}). Quitting")
+            break
 
 
-        if not os.path.exists(os.path.join(output_folder, "iteration{}".format(iteration))):
-            os.mkdir(os.path.join(output_folder, "iteration{}".format(iteration)))
+        if not os.path.exists(os.path.join(output_folder, f"iteration{iteration}")):
+            os.mkdir(os.path.join(output_folder, "iteration{iteration}"))
         else:
             choice = input("Attempting to write into non-empty folder {}. Proceed? (y/n)".format(
-                os.path.join(output_folder, "iteration{}".format(iteration))
+                os.path.join(output_folder, f"iteration{iteration}")
             ))
 
             if choice not in ["y", "Y", "yes", "Yes"]:
@@ -399,16 +433,18 @@ def sample(
             random_points.append(
                 {
                     coord : (edge[1] - edge[0]) * np.random.random() + edge[0]
-                    for coord, edge in param_space.items()
+                    for coord, edge in coordinates.items()
                 }
             )
 
         new_points = pd.concat((new_points, pd.DataFrame(random_points)))
+        # drop duplicates again just to be safe
+        new_points = new_points.drop_duplicates()
 
         new_points = _cloudy_evaluate(
             cloudy_input,
             cloudy_source_path,
-            os.path.join(output_folder, "iteration{}".format(iteration)),
+            os.path.join(output_folder, f"iteration{iteration}"),
             filename_pattern,
             new_points,
             rad_bg,
@@ -417,29 +453,31 @@ def sample(
 
         points = pd.concat(points, new_points)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         print("\n\n\n")
+
+
+def _get_corners(param_space):
+    """
+    For a given parameter space, returns a pandas Dataframe containing its corners, with a nan values column.
+
+    TODO: Generalize
+
+    :param param_space:
+    :return:
+    """
+    keys = list(param_space.keys())
+    values = [param_space[key] for key in param_space.keys()] # ensuring order
+
+    corners = []
+    for product in itertools.product(*values):
+        corners.append({
+            keys[i]:product[i] for i in range(len(product))
+        })
+
+    corners = pd.DataFrame(corners)
+    corners["values"] = np.nan
+
+    return corners
 
 
 def _plot_parameter_space(points, new_points, coordinates, output_folder, suffix):
@@ -545,11 +583,6 @@ def _set_up_grid(num_per_dim, parameter_space, parameter_margins, rad_parameter_
 
     points["values"] = np.nan
 
-    print("Default grid:")
-    print(points)
-    exit()
-    # TODO: Verify default grid
-
     return points
 
 
@@ -565,7 +598,7 @@ def _get_param_space_with_margins(parameter_space, parameter_margins, rad_parame
     """
     param_space_with_margins = {}
 
-    for k, v in parameter_margins:
+    for k, v in parameter_margins.items():
         if hasattr(v, "__iter__"):  # sequence
             if len(v) != 2:
                 raise RuntimeError("Margins must either be number or iterable of length 2: " + str(v))
@@ -573,11 +606,12 @@ def _get_param_space_with_margins(parameter_space, parameter_margins, rad_parame
         elif type(v) == float or type(v) == int:
             interval_length = abs(parameter_space[k][1] - parameter_space[k][0])
             param_space_with_margins[k] = (
-                min(parameter_space[k] - interval_length * parameter_margins[k]),
-                max(parameter_space[k] + interval_length * parameter_margins[k])
+                # cast to np array for element wise operations
+                min(np.array(parameter_space[k]) - interval_length * parameter_margins[k]),
+                max(np.array(parameter_space[k]) + interval_length * parameter_margins[k])
             )
 
-    for k, v in rad_parameter_margins:
+    for k, v in rad_parameter_margins.items():
         if hasattr(v, "__iter__"):  # sequence
             if len(v) != 2:
                 raise RuntimeError("Margins must either be number or iterable of length 2: " + str(v))
@@ -585,8 +619,8 @@ def _get_param_space_with_margins(parameter_space, parameter_margins, rad_parame
         elif type(v) == float or type(v) == int:
             interval_length = abs(rad_parameter_space[k][1] - rad_parameter_space[k][0])
             param_space_with_margins[k] = (
-                min(rad_parameter_space[k] - interval_length * rad_parameter_margins[k]),
-                max(rad_parameter_space[k] + interval_length * rad_parameter_margins[k])
+                min(np.array(rad_parameter_space[k]) - interval_length * rad_parameter_margins[k]),
+                max(np.array(rad_parameter_space[k]) + interval_length * rad_parameter_margins[k])
             )
 
     return param_space_with_margins
