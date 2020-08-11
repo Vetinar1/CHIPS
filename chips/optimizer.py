@@ -128,8 +128,8 @@ def sample(
         print(f"\t{dim}:\t{edges}\t\tMargins: {param_space_margins[dim]}")
 
     print("Radiation background parameters:")
-    for rad, edges in rad_params.items():
-        print(f"\t{rad}:\t{edges}\t\tMargins: {rad_params_margins[rad]}")
+    for k, v in rad_params.items():
+        print(f"\t{k}:\t{v[1]}\t\tMargins: {rad_params_margins[k]}\t\tSource file: {v[0]}")
 
     print("Existing data".ljust(50) + str(existing_data))
     print("Points per dimension of initial grid ".ljust(50) + str(initial_grid))
@@ -151,8 +151,14 @@ def sample(
     ####################################################################################################################
     ###################################################    Setup    ####################################################
     ####################################################################################################################
+    rad_bg = _get_rad_bg_as_function(rad_params)
+
     # Compile coordinates and values into easily accessible lists
-    coordinates = {**param_space, **rad_params} #list(param_space.keys()) + list(rad_params.keys())
+    coordinates = { # TODO Rename to core
+        **param_space,
+        **{k:v[1] for k, v in rad_params.items()}
+    } #list(param_space.keys()) + list(rad_params.keys())
+    margins = {**param_space_margins, **rad_params_margins}
     coord_list  = list(coordinates.keys())  # guaranteed order
     values = ["values"]  # TODO
     points = pd.DataFrame(columns=coord_list + values)
@@ -169,17 +175,15 @@ def sample(
 
     print("Setting up grid")
     if initial_grid:
-        grid_points = _set_up_grid(initial_grid, param_space, param_space_margins, rad_params, rad_params_margins)
+        grid_points = _set_up_grid(initial_grid, coordinates, margins)
         points = pd.concat((points, grid_points))
 
     # The "corners" of the parameter space will work as convex hull, ensuring that all other points are contained
     # within and are thus valid in the Delaunay interpolation
     corners = _get_corners(
         _get_param_space_with_margins(
-            param_space,
-            param_space_margins,
-            rad_params,
-            rad_params_margins
+            coordinates,
+            margins,
         )
     )
 
@@ -194,14 +198,15 @@ def sample(
             if "{" + str(c) + "}" not in filename_pattern:
                 raise RuntimeError(f"Invalid file pattern: Missing {c}")
 
-    # Rad bg required for all cloudy runs from here on
-    rad_bg = _get_rad_bg_as_function(rad_params)
-
     time1 = time.time()
-    corners = _cloudy_evaluate(cloudy_input, cloudy_source_path, output_folder, filename_pattern, corners, rad_bg, n_jobs)
-    points = pd.concat((points, corners))
-    points = points.drop_duplicates(subset=coord_list, keep="last")
-    points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, output_folder, filename_pattern, points, rad_bg, n_jobs)
+    it0folder = os.path.join(output_folder, "iteration0/")
+    if not os.path.exists(it0folder):
+        os.mkdir(it0folder)
+
+    corners = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, corners, rad_bg, n_jobs)
+    points = pd.concat((points, corners), ignore_index=True)
+    points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+    points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, points, rad_bg, n_jobs)
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial evaluations")
 
@@ -217,6 +222,8 @@ def sample(
     # TODO: Generalize for multiple values
     N = len(points.columns) - 1
     while True:
+        # reset index just to be on the safe side while partitioning later
+        points = points.reset_index(drop=True)
         iteration += 1
         print("{:*^50}".format("Iteration {}".format(iteration)))
 
@@ -232,28 +239,26 @@ def sample(
         # if plot_iterations:
         #     fig, ax = plt.subplots(1, n_partitions, figsize=(10 * n_partitions, 10))
 
+        points["interpolated"] = np.nan
+        points["diff"] = np.nan
         new_points = pd.DataFrame(columns=coordinates)
 
         timeA = time.time()
         for partition in range(n_partitions):
-            subset = points.iloc[partition::n_partitions]
-            bigset = pd.concat((points, subset)).drop_duplicates()
+            # TODO This part uses a lot of deep copies, might be inefficient
+            subset = points.loc[partition::n_partitions].copy(deep=True)
+            bigset = pd.concat((points, subset)).drop_duplicates(keep=False)
 
             # TODO again, generalize
-            subset["interpolated"] = np.nan
+            subset.loc[:,"interpolated"] = np.nan
+
+            # Always include corners to ensure convex hull
+            bigset = pd.concat((bigset, corners))
+            bigset = bigset.drop_duplicates(keep=False)
 
             # dont consider points in margins
             for c, edges in coordinates.items():
                 subset = subset.loc[(subset[c] > edges[0]) & (subset[c] < edges[1])]
-
-            # But ALWAYS include corners to ensure convex hull
-            subset = pd.concat((subset, corners))
-            subset = subset.drop_duplicates()
-
-
-            # # Not sure this is necessary, just to be safe
-            # subset.reset_index()
-            # bigset.reset_index()
 
             tri = spatial.Delaunay(bigset[coordinates].to_numpy())
             simplex_indices = tri.find_simplex(subset[coordinates].to_numpy())
@@ -274,18 +279,19 @@ def sample(
 
             # 3. Interpolation
             # TODO vectorize
-            for i in subset.index:
-                subset.loc[i, "interpolated"] = np.inner(
+            for i, index in enumerate(subset.index):
+                # print(i, index)
+                subset.loc[index, "interpolated"] = np.inner(
                     points.loc[simplices[i], "values"], weights[i]
                 )
+                # print(subset.loc[index, "interpolated"])
+                # print(points.loc[simplices[i]])
+                # print(weights[i])
 
+            # print(subset.to_string())
             assert(not subset["interpolated"].isnull().to_numpy().any())
 
             # 4. Find points over threshold
-            # convert to log because the thresholds are given in dex
-            subset.loc[:, ["values", "interpolated"]] = np.log10(
-                subset.loc[:, ["values", "interpolated"]]
-            )
             subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
 
             # Draw new samples by finding geometric centers of the simplices containing the points over threshold
@@ -305,7 +311,10 @@ def sample(
                 )
 
                 for i in range(simplices.shape[0]):
-                    simplex_points[i] = bigset.loc[simplices[i], coordinates].to_numpy()
+                    simplex_points[i] = bigset.loc[
+                        bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                        coord_list
+                    ].to_numpy()
 
                 # new samples = averages (centers) of the points making up the simplices
                 samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
@@ -339,8 +348,13 @@ def sample(
             # points = pd.merge(points, subset, axis=1, join="outer", sort=False)
             # Note: This requires the index to be as in the original, so we CAN NOT use reset_index
             # at the beginning!
-            points = points.join(subset)
-            assert(not subset.loc[:,["values", "interpolated"]].isnull().to_numpy().any())
+            #points = points.join(subset)
+
+            # couldnt find a pythonic/pandaic/vectorized solution
+            # points.loc[subset.index, ["interpolated", "diff"]] = subset["interpolated", "diff"]
+            points.loc[subset.index, "interpolated"] = subset["interpolated"]
+            points.loc[subset.index, "diff"] = subset["diff"]
+            assert(not subset.loc[:,"interpolated"].isnull().to_numpy().any())
 
         timeB = time.time()
 
@@ -441,10 +455,16 @@ def sample(
         # drop duplicates again just to be safe
         new_points = new_points.drop_duplicates()
 
+        iteration_folder = os.path.join(output_folder, f"iteration{iteration}")
+        if not os.path.exists(iteration_folder):
+            os.mkdir(iteration_folder)
+
+        points = points.drop(["interpolated", "diff"], axis=1)
+
         new_points = _cloudy_evaluate(
             cloudy_input,
             cloudy_source_path,
-            os.path.join(output_folder, f"iteration{iteration}"),
+            os.path.join(output_folder, iteration_folder),
             filename_pattern,
             new_points,
             rad_bg,
@@ -454,6 +474,9 @@ def sample(
         points = pd.concat(points, new_points)
 
         print("\n\n\n")
+
+        print("full iteration")
+        exit()
 
 
 def _get_corners(param_space):
@@ -557,19 +580,19 @@ def _load_existing_data(folder, filename_pattern, coordinates):
     return points
 
 
-def _set_up_grid(num_per_dim, parameter_space, parameter_margins, rad_parameter_space, rad_parameter_margins):
+def _set_up_grid(num_per_dim, parameter_space, margins):
     """
     Fills parameter space with a grid as starting point. Takes margins into account.
 
     :param num_per_dim:
     :param parameter_space:
-    :param parameter_margins:
+    :param margins:
     :param rad_parameter_space:
     :param rad_parameter_margins:
     :return:
     """
     param_space_with_margins = _get_param_space_with_margins(
-        parameter_space, parameter_margins, rad_parameter_space, rad_parameter_margins
+        parameter_space, margins
     )
 
     param_names =  list(param_space_with_margins.keys())
@@ -586,19 +609,19 @@ def _set_up_grid(num_per_dim, parameter_space, parameter_margins, rad_parameter_
     return points
 
 
-def _get_param_space_with_margins(parameter_space, parameter_margins, rad_parameter_space, rad_parameter_margins):
+def _get_param_space_with_margins(parameter_space, margins):
     """
     Returns entire parameter space - including radiation component - with margins.
 
     :param parameter_space:
-    :param parameter_margins:
+    :param margins:
     :param rad_parameter_space:
     :param rad_parameter_margins:
     :return:
     """
     param_space_with_margins = {}
 
-    for k, v in parameter_margins.items():
+    for k, v in margins.items():
         if hasattr(v, "__iter__"):  # sequence
             if len(v) != 2:
                 raise RuntimeError("Margins must either be number or iterable of length 2: " + str(v))
@@ -607,36 +630,24 @@ def _get_param_space_with_margins(parameter_space, parameter_margins, rad_parame
             interval_length = abs(parameter_space[k][1] - parameter_space[k][0])
             param_space_with_margins[k] = (
                 # cast to np array for element wise operations
-                min(np.array(parameter_space[k]) - interval_length * parameter_margins[k]),
-                max(np.array(parameter_space[k]) + interval_length * parameter_margins[k])
-            )
-
-    for k, v in rad_parameter_margins.items():
-        if hasattr(v, "__iter__"):  # sequence
-            if len(v) != 2:
-                raise RuntimeError("Margins must either be number or iterable of length 2: " + str(v))
-            param_space_with_margins[k] = (min(v), max(v))
-        elif type(v) == float or type(v) == int:
-            interval_length = abs(rad_parameter_space[k][1] - rad_parameter_space[k][0])
-            param_space_with_margins[k] = (
-                min(np.array(rad_parameter_space[k]) - interval_length * rad_parameter_margins[k]),
-                max(np.array(rad_parameter_space[k]) + interval_length * rad_parameter_margins[k])
+                min(np.array(parameter_space[k]) - interval_length * margins[k]),
+                max(np.array(parameter_space[k]) + interval_length * margins[k])
             )
 
     return param_space_with_margins
 
 
 def _get_rad_bg_as_function(rad_params):
+    if not rad_params:
+        return lambda x: None
+
     interpolators = {}
     rad_data = {}
 
     # Load radiation data and build interpolators
     for k, v in rad_params.items():
-        rad_data[k] = np.loadtxt(k)
-        print("Loaded radiation data:")
-        print(rad_data)
-        exit() # TODO: Verify radiation data is loaded correctly
-        interpolators[k] = interpolate.InterpolatedUnivariateSpline(rad_data[:,0], rad_data[:,1], k=1, ext=1)
+        rad_data[k] = np.loadtxt(v[0])
+        interpolators[k] = interpolate.InterpolatedUnivariateSpline(rad_data[k][:,0], rad_data[k][:,1], k=1, ext=1)
 
     valid_keys = list(rad_params.keys())
 
@@ -646,23 +657,58 @@ def _get_rad_bg_as_function(rad_params):
 
     def rad_bg_function(rad_multipliers):
         # TODO: Verify function behaves as expected (plots!)
-        f_nu = sum([interpolators[k](combined_energies) * rad_multipliers[k] for k in rad_multipliers.keys() if k in valid_keys])
-        return f_nu
+        # Note: Cloudy can only handle 4000 lines of input at a time...
+        # f_nu = sum([interpolators[k](combined_energies) * rad_multipliers[k] for k in rad_multipliers.keys() if k in valid_keys])
+        # TODO: Make sure this works with logspace, or find better solution altogether
+        x = np.geomspace(min(combined_energies), max(combined_energies), 3900)
+        f_nu = sum([interpolators[k](x) * rad_multipliers[k] for k in rad_multipliers.keys() if k in valid_keys])
+
+        hstack_shape = (f_nu.shape[0], 1)
+        spectrum = np.hstack(
+            (
+                np.reshape(f_nu, hstack_shape),
+                # np.reshape(combined_energies, hstack_shape)
+                np.reshape(x, hstack_shape)
+            )
+        )
+
+        spectrum = spectrum[(spectrum[:,0] != 0) & (spectrum[:,1] != 0)]
+
+        # Cloudy wants the log of the frequency
+        # TODO Check factor 4pi
+        spectrum[:,0] = np.log10(spectrum[:,0])
+
+        # Note: We save files in the format "f(x) x",
+        # because we use "f(x) at x" in the original f_nu cloudy command,
+        # and it its more consistent that way
+        # however
+        # cloudy may *also* interpret interpolate/continue inputs as "x f(x)"
+        # so we have to make sure that our first values are in the correct range
+        # Quote hazy p. 46
+        # "CLOUDY assumes that the log of the energy in Rydbergs was entered if thefirst number is negative;
+        # that the log of the frequency (Hz) was entered if the first number isgreater than 5;
+        # and linear Rydbergs otherwise."
+        #
+        # Yes, it is stupid
+        # Yes, i should probably use the table SED command instead
+        # TODO
+
+
+        return spectrum
 
     return rad_bg_function
 
 
 def _f_nu_to_string(f_nu):
-    # Note: The columns are switched around!!!
-    out = "f(nu) = {0} at {1}\ninterpolate ({2}  {3}\n)".format(
-        f_nu[0,1],
-        f_nu[0,0],
-        f_nu[1,1],
-        f_nu[1,0]
-    )
+    if f_nu is None:
+        return ""
+
+    # find the entry closest to 1 Ryd for cloudy normalization
+    mindex = np.argmin(np.abs(f_nu[:,0] - 1))   # min index
+    out = f"f(nu) = {f_nu[mindex,0]} at {f_nu[mindex,1]}\ninterpolate ({f_nu[1,1]}  {f_nu[1,0]})\n"
 
     for i in range(2, f_nu.shape[0]):
-        out += "continue ({0}  {1})\n".format(f_nu[i,1], f_nu[i,0])
+        out += f"continue ({f_nu[i,1]}  {f_nu[i,0]})\n"
 
     out += "iterate to convergence"
     return out
@@ -681,93 +727,51 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     """
     filenames = []
 
-    for row in points.loc[points["value"] == np.nan].itertuples(index=False):   # TODO: Arbitrary values
-        filestring = input_file.format_map(row) # TODO: Important! File save location still missing
+    for i in points.loc[points["values"].isnull()].index:
+        row = points.loc[i].to_dict()
+        filestring = input_file.format_map(
+            {
+                **row,
+                **{"fname":filename_pattern.format_map(row)}
+            }
+        )
         filestring += "\n"
         filestring += _f_nu_to_string(rad_bg_function(row))
 
-        # TODO Verify this .. construction works
-        with open(os.path.join(path_to_source, "..", filename_pattern.format(row)) + ".in") as f:
+        # I'd love to put this somewhere more convenient, but cloudy cant handle subdirectories
+        with open(filename_pattern.format_map(row) + ".in", "w") as f:
             f.write(filestring)
 
-        filenames.append(os.path.join(path_to_source, "..", filename_pattern.format(row)))
+        filenames.append(filename_pattern.format_map(row))
 
-    with open(os.path.join(output_folder, "_filenames.temp"), "w") as file:
+    path_to_filenames = os.path.join(output_folder, "_filenames.temp")
+    with open(path_to_filenames, "w") as file:
         for filename in filenames:
             file.write(filename + "\n")
 
-
-    os.system("parallel -j {n_jobs} '{cloudy_path} -r' :::: filenames".format(
-        n_jobs=n_jobs,
-        cloudy_path=os.path.join(path_to_source, "cloudy.exe")
-    ))
+    path_to_exe = os.path.join(path_to_source, "cloudy.exe")
+    os.system(f"parallel -j {n_jobs} '{path_to_exe} -r' :::: {path_to_filenames}")
 
     # TODO: Find a way to generically incorporate other data here
 
     # TODO: Implement reading and moving files to output folder. Cloudy file saving needs to be solved first.
-    # # Step 4: Read cooling data
-    # # for now only Ctot
-    # for i, filename in enumerate(input_files):
-    #     points[i, -1] = np.loadtxt(filename + ".cool", usecols=3)
-    #
-    # # Step 5: Move files to cache
-    # pattern = get_base_filename_from_parameters("-?[0-9\.]+", "-?[0-9\.]+", "-?[0-9\.]+", "-?[0-9\.]+") + "-?[0-9\.]+"
-    # #os.system("mv " + pattern + " " + cache_folder)
-    # os.system("ls | grep -P {} | xargs -I % -n 1000 mv -t {} %".format(pattern, cache_folder))
+    # Step 4: Read cooling data
+    # for now only Ctot
+    for i in points.loc[points["values"].isnull()].index:
+        points.loc[i,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=3))
 
-    os.remove(os.path.join(output_folder, "_filenames.temp"))
+        os.system(f"mv {filenames[i]}* {output_folder}")
+
+    # Step 5: Move files to output folder
+    # match_pattern = filename_pattern.format(*["*" for x in range(filename_pattern.count("{"))])
+    # os.system("mv " + match_pattern + " " + output_folder)
+
+    # mv has a maximum number of arguments, this is avoided by using this construction instead of mv *
+    #os.system(f"ls | grep -P {match_pattern} | xargs -I % -n 1000 mv -t {output_folder} %")
+
+    os.remove(path_to_filenames)
+
+    #points["values"] = np.log10(points["values"])
+
 
     return points
-
-
-def interpolate_delaunay(points, interp_coords, margins=0):
-    """
-    Use points to interpolate at positions interp_coords using Delaunay triangulation.
-    TODO: This entire function needs to be re-reviewed for the rewrite
-
-    :param points:          Points; coords + values; Shape (N, M+1)
-    :param interp_coords:   Coords only; Shape (N', M)
-    :return:                1. Array of successfully interpolated points with values at interp_coords; Shape (N'', M+1)
-                            2. Mask for interp_coords that is true for each element that couldnt be interpolated/
-                            was ignored; Shape (N)
-                            3. The triangulation object
-    """
-
-    # TODO: Generalize for multiple values
-    tri = spatial.Delaunay(points.drop("values", axis=1))              # Triangulation
-    simplex_indices = tri.find_simplex(interp_coords)   # Find the indices of the simplices containing the interp_coords
-
-    # Only consider those points which are inside of the triangulation area space.
-    valid_coords   = interp_coords[simplex_indices != -1]
-    #ignored_coords = interp_coords[simplex_indices == -1]
-
-    # Get the simplices and transforms containing the valid points
-    simplex_indices_cleaned = simplex_indices[simplex_indices != -1]
-    simplices  = tri.simplices[simplex_indices_cleaned]
-    transforms = tri.transform[simplex_indices_cleaned]
-
-    # Adapted from
-    # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
-    # Get number of coordinate dimensions
-    n = interp_coords.shape[1]
-
-    # barycentric coordinates of points; N-1
-    bary = np.einsum('ijk,ik->ij', transforms[:, :n, :n], valid_coords - transforms[:, n, :])
-
-    # Weights of points/complete barycentric coordinates (including the last dependent one); N
-    weights = np.c_[bary, 1 - bary.sum(axis=1)]
-
-    # The actual interpolation step
-    interpolated = []
-    for j in range(valid_coords.shape[0]):
-        interpolated.append(
-            np.inner(points[simplices[j], -1], weights[j])
-        )
-
-    interpolated = np.array(interpolated)
-    # reshape for hstack
-    interpolated = np.reshape(interpolated, (interpolated.shape[0], 1))
-
-    ignored_mask = simplex_indices == -1
-
-    return np.hstack((valid_coords, interpolated)), ignored_mask, tri

@@ -1,36 +1,36 @@
-CMB redshift {z}
-table HM12 redshift {z}
-metals {Z}
-hden {nH}
+CMB redshift 0
+table HM12 redshift 0
+metals 0
+hden 2 {nH}
 constant temperature {T}
 stop zone 1
 iterate to convergence
 print last
 print short
-set save prefix {fname}
+set save prefix "{fname}"
 save overview last ".overview"
 save cooling last ".cool"
 save heating last ".heat"
-save cooling each last ".cool_by_element"
-save element hydrogen last ".H_ionf"
-save element helium last ".He_ionf"
-save element oxygen last ".O_ionf"
-save element carbon last ".C_ionf"
-save element neon last ".Ne_ionf"
-save element magnesium last ".Mg_ionf"
-save element silicon last ".Si_ionf"
-save last line emissivity ".lines"
-H 1 1215.67A
-H 1 1025.72A
-He 2 1640.43A
-C 3 977.020A
-C 4 1548.19A
-C 4 1550.78A
-N 5 1238.82A
-N 5 1242.80A
-O 6 1031.91A
-O 6 1037.62A
-Si 3 1206.50A
-Si 4 1393.75A
-Si 4 1402.77A
-end of line
+# save cooling each last ".cool_by_element"
+# save element hydrogen last ".H_ionf"
+# save element helium last ".He_ionf"
+# save element oxygen last ".O_ionf"
+# save element carbon last ".C_ionf"
+# save element neon last ".Ne_ionf"
+# save element magnesium last ".Mg_ionf"
+# save element silicon last ".Si_ionf"
+# save last line emissivity ".lines"
+# H 1 1215.67A
+# H 1 1025.72A
+# He 2 1640.43A
+# C 3 977.020A
+# C 4 1548.19A
+# C 4 1550.78A
+# N 5 1238.82A
+# N 5 1242.80A
+# O 6 1031.91A
+# O 6 1037.62A
+# Si 3 1206.50A
+# Si 4 1393.75A
+# Si 4 1402.77A
+# end of line

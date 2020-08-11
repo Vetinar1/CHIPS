@@ -9,25 +9,25 @@ out = sample(
     param_space={
         "T":[2, 8],
         "nH":[-4, 4],
-        "Z":[-2, 0],
-        "z":[0, 2]
+        #"Z":[-2, 0],
+        #"z":[0, 2]
     },
     param_space_margins={
         "T":0.1,
         "nH":0.1,
-        "Z":0.1,
-        "z":[0, 2.2]
+        #"Z":0.1,
+        #"z":[0, 2.2]
     },
     rad_params={
-        "spectra/hhT6":[18, 22],
-        "spectra/SFR":[18, 22]  # TODO no clue if these are reasonable
+        #"hhT6":("spectra/hhT6", [18, 22]),
+        # "SFR":("spectra/SFR", [18, 22])  # TODO no clue if these are reasonable
     },
     rad_params_margins={
-        "spectra/hhT6":0.1,
-        "spectra/SFR":0.1
+        #"hhT6":0.1,
+        # "SFR":0.1
     },
     existing_data=None, # TODO: Testing
-    initial_grid=5,
+    initial_grid=7,
     filename_pattern=None,
 
     dex_threshold=0.1,
