@@ -19,12 +19,12 @@ out = sample(
         #"z":[0, 2.2]
     },
     rad_params={
-        #"hhT6":("spectra/hhT6", [18, 22]),
-        # "SFR":("spectra/SFR", [18, 22])  # TODO no clue if these are reasonable
+        "hhT6":("spectra/hhT6", [18, 22]),
+        "SFR":("spectra/SFR", [18, 22])  # TODO no clue if these are reasonable
     },
     rad_params_margins={
-        #"hhT6":0.1,
-        # "SFR":0.1
+        "hhT6":0.1,
+        "SFR":0.1
     },
     existing_data=None, # TODO: Testing
     initial_grid=7,
@@ -34,11 +34,11 @@ out = sample(
     over_thresh_max_fraction=0.1,
     dex_max_allowed_diff=0.5,
     random_samples_per_iteration=30,
-    n_jobs=12,
+    n_jobs=40,
     n_partitions=10,
-    max_iterations=2,
+    max_iterations=20,
     max_storage_gb=20,
-    max_time=0.1*3600,
+    max_time=1.1*3600,
     plot_iterations=True # TODO: Testing, Implementation
 )
 
