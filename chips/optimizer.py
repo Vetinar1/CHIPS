@@ -128,8 +128,11 @@ def sample(
         print(f"\t{dim}:\t{edges}\t\tMargins: {param_space_margins[dim]}")
 
     print("Radiation background parameters:")
-    for k, v in rad_params.items():
-        print(f"\t{k}:\t{v[1]}\t\tMargins: {rad_params_margins[k]}\t\tSource file: {v[0]}")
+    if rad_params:
+        for k, v in rad_params.items():
+            print(f"\t{k}:\t{v[1]}\t\tMargins: {rad_params_margins[k]}\t\tSource file: {v[0]}")
+    else:
+        print("\tNone")
 
     print("Existing data".ljust(50) + str(existing_data))
     print("Points per dimension of initial grid ".ljust(50) + str(initial_grid))
@@ -164,6 +167,7 @@ def sample(
     points = pd.DataFrame(columns=coord_list + values)
 
     # Load existing data if applicable
+    existing_point_count = 0
     if existing_data:
         if not os.path.isdir(output_folder):
             raise RuntimeError("Specified existing data at " + str(existing_data) + " but is not a dir or does not exist")
@@ -172,6 +176,8 @@ def sample(
             points,
             _load_existing_data(existing_data, filename_pattern, coordinates)
         )
+
+        existing_point_count = len(points.index)
 
     print("Setting up grid")
     if initial_grid:
@@ -209,6 +215,7 @@ def sample(
     points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, points, rad_bg, n_jobs)
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial evaluations")
+    print("\n\n")
 
     assert (not points[values].isnull().to_numpy().any())
 
@@ -280,15 +287,18 @@ def sample(
             # 3. Interpolation
             # TODO vectorize
             for i, index in enumerate(subset.index):
-                # print(i, index)
+                # print(simplices[i])
+                # print(weights[i])
+                # print(points.loc[i])
+                # print(np.inner(
+                #     points.loc[simplices[i], "values"], weights[i]
+                # ))
+                # print()
                 subset.loc[index, "interpolated"] = np.inner(
                     points.loc[simplices[i], "values"], weights[i]
                 )
-                # print(subset.loc[index, "interpolated"])
-                # print(points.loc[simplices[i]])
-                # print(weights[i])
+            # print()
 
-            # print(subset.to_string())
             assert(not subset["interpolated"].isnull().to_numpy().any())
 
             # 4. Find points over threshold
@@ -387,10 +397,11 @@ def sample(
 
         # diagnostics
         print("Total time to interpolate and sample:".ljust(50), seconds_to_human_readable(timeB - timeA))
+        print(timeB - timeA)
         print("Total points before sampling".ljust(50), total_count)
         print("Points in core".ljust(50), in_bounds_count)
         print("Points in margins".ljust(50), outside_bounds_count)
-        print(f"Points in core over threshold ({dex_threshold})".ljust(50), over_thresh_count, f"{over_thresh_max_fraction*100}%")
+        print(f"Points in core over threshold ({dex_threshold})".ljust(50), over_thresh_count, f"/ {over_thresh_fraction*100}%")
         print("Number of new samples".ljust(50), len(new_points.index))
         print("Largest interpolation error".ljust(50), max_diff)
 
@@ -408,7 +419,7 @@ def sample(
             max_diff_condition = True
 
         if threshold_condition and max_diff_condition:
-            print("Reached desired accuracy. Quitting.")
+            print(f"Reached desired accuracy. Quitting.")
             break
 
         if max_iterations and iteration > max_iterations:
@@ -423,18 +434,17 @@ def sample(
                 print(f"Reached maximum allowed storage ({output_size_gb} GB/{max_storage_gb} GB). Quitting.")
                 break
 
-        if max_time is not None and max_time > time.time() - timeBeginLoop:
+        if max_time is not None and max_time < time.time() - timeBeginLoop:
             print(f"Reached maximum calculation time ({seconds_to_human_readable(time.time() - timeBeginLoop)} " +
                   f"/ {seconds_to_human_readable(max_time)}). Quitting")
             break
 
 
-        if not os.path.exists(os.path.join(output_folder, f"iteration{iteration}")):
-            os.mkdir(os.path.join(output_folder, "iteration{iteration}"))
+        iteration_folder = os.path.join(output_folder, f"iteration{iteration}")
+        if not os.path.exists(iteration_folder):
+            os.mkdir(iteration_folder)
         else:
-            choice = input("Attempting to write into non-empty folder {}. Proceed? (y/n)".format(
-                os.path.join(output_folder, f"iteration{iteration}")
-            ))
+            choice = input(f"Attempting to write into non-empty folder {iteration_folder}. Proceed? (y/n)")
 
             if choice not in ["y", "Y", "yes", "Yes"]:
                 print("Aborting...")
@@ -452,31 +462,30 @@ def sample(
             )
 
         new_points = pd.concat((new_points, pd.DataFrame(random_points)))
-        # drop duplicates again just to be safe
-        new_points = new_points.drop_duplicates()
-
-        iteration_folder = os.path.join(output_folder, f"iteration{iteration}")
-        if not os.path.exists(iteration_folder):
-            os.mkdir(iteration_folder)
 
         points = points.drop(["interpolated", "diff"], axis=1)
+        new_points["values"] = np.nan
+        points = pd.concat((points, new_points)).drop_duplicates().reset_index(drop=True)
 
-        new_points = _cloudy_evaluate(
+        time3 = time.time()
+        points = _cloudy_evaluate(
             cloudy_input,
             cloudy_source_path,
-            os.path.join(output_folder, iteration_folder),
+            iteration_folder,
             filename_pattern,
-            new_points,
+            points,
             rad_bg,
             n_jobs
         )
-
-        points = pd.concat(points, new_points)
+        print(f"{round(time.time() - time3, 2)}s to evaluate new points")
 
         print("\n\n\n")
 
-        print("full iteration")
-        exit()
+    total_time = time.time() - timeBeginLoop
+    total_time_readable = seconds_to_human_readable(total_time)
+
+    print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
+          f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
 
 def _get_corners(param_space):
@@ -531,7 +540,7 @@ def _plot_parameter_space(points, new_points, coordinates, output_folder, suffix
     new_points.drop("hue", axis=1, inplace=True)
 
     end = time.time()
-    print("{}s to plot current iteration".format(round(end - begin, 2)))
+    print(f"{round(end - begin, 2)}s to plot current iteration")
 
 
 def _load_point(filename, filename_pattern, coordinates):
@@ -757,10 +766,11 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     # TODO: Implement reading and moving files to output folder. Cloudy file saving needs to be solved first.
     # Step 4: Read cooling data
     # for now only Ctot
-    for i in points.loc[points["values"].isnull()].index:
-        points.loc[i,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=3))
+    for i, index in enumerate(points.loc[points["values"].isnull()].index):
+        points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=3))
 
         os.system(f"mv {filenames[i]}* {output_folder}")
+
 
     # Step 5: Move files to output folder
     # match_pattern = filename_pattern.format(*["*" for x in range(filename_pattern.count("{"))])
