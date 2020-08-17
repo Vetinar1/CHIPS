@@ -240,7 +240,7 @@ def sample(
         print("{:*^50}".format("Iteration {}".format(iteration)))
 
         len_pre_drop =  len(points.index)
-        points = points.drop_duplicates()
+        points = points.drop_duplicates(ignore_index=True)
         len_post_drop = len(points.index)
         n_dropped = len_pre_drop - len_post_drop
 

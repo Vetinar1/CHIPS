@@ -35,11 +35,11 @@ out = sample(
     over_thresh_max_fraction=0.1,
     dex_max_allowed_diff=0.5,
     random_samples_per_iteration=30,
-    n_jobs=40,
+    n_jobs=12,
     n_partitions=10,
     max_iterations=20,
     max_storage_gb=20,
-    max_time=1.1*3600,
+    max_time=0.1*3600,
     plot_iterations=True, # TODO: Testing, Implementation,
 
     debug_plot_2d=True
