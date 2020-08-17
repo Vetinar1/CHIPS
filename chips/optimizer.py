@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 from parse import parse
+from matplotlib import patches
 
 sns.set()
 
@@ -25,6 +26,7 @@ def sample(
 
         existing_data=None, # TODO: Rename
         initial_grid=10,
+        perturbation_scale=None,
 
         filename_pattern=None,
 
@@ -41,7 +43,8 @@ def sample(
         max_storage_gb=10,
         max_time=20,
 
-        plot_iterations=True
+        plot_iterations=True,
+        debug_plot_2d=False
 ):
     """
 
@@ -82,10 +85,11 @@ def sample(
     if not os.path.isdir(output_folder):
         os.mkdir(output_folder)
     elif len(os.listdir(output_folder)) != 0:
-        choice = input("Chosen output folder is not empty. Proceed? (y/n)")
-        if choice not in ["y", "Y", "yes", "Yes"]:
-            print("Aborting...")
-            exit()
+        # choice = input("Chosen output folder is not empty. Proceed? (y/n)")
+        # if choice not in ["y", "Y", "yes", "Yes"]:
+        #     print("Aborting...")
+        #     exit()
+        raise RuntimeWarning(f"Chosen Output {output_folder} folder is not empty")
 
 
     # Make sure cloudy exists
@@ -181,7 +185,7 @@ def sample(
 
     print("Setting up grid")
     if initial_grid:
-        grid_points = _set_up_grid(initial_grid, coordinates, margins)
+        grid_points = _set_up_grid(initial_grid, coordinates, margins, perturbation_scale)
         points = pd.concat((points, grid_points))
 
     # The "corners" of the parameter space will work as convex hull, ensuring that all other points are contained
@@ -217,6 +221,7 @@ def sample(
     print(round(time2 - time1, 2), "s to do initial evaluations")
     print("\n\n")
 
+
     assert (not points[values].isnull().to_numpy().any())
 
     ####################################################################################################################
@@ -243,8 +248,8 @@ def sample(
             print(f"Dropped {n_dropped} duplicate samples")
 
         # For plotting the triangulation TODO
-        # if plot_iterations:
-        #     fig, ax = plt.subplots(1, n_partitions, figsize=(10 * n_partitions, 10))
+        if debug_plot_2d:
+            fig, ax = plt.subplots(1, n_partitions, figsize=(10 * n_partitions, 10))
 
         points["interpolated"] = np.nan
         points["diff"] = np.nan
@@ -261,7 +266,11 @@ def sample(
 
             # Always include corners to ensure convex hull
             bigset = pd.concat((bigset, corners))
-            bigset = bigset.drop_duplicates(keep=False)
+            bigset = bigset.drop_duplicates()
+
+            # Need to reset the bigset index due to the concatenation
+            # Since the bigset index is not relevant again - unlike the subset index - this should be fine
+            bigset = bigset.reset_index()
 
             # dont consider points in margins
             for c, edges in coordinates.items():
@@ -287,22 +296,56 @@ def sample(
             # 3. Interpolation
             # TODO vectorize
             for i, index in enumerate(subset.index):
-                # print(simplices[i])
-                # print(weights[i])
-                # print(points.loc[i])
-                # print(np.inner(
-                #     points.loc[simplices[i], "values"], weights[i]
-                # ))
-                # print()
                 subset.loc[index, "interpolated"] = np.inner(
                     points.loc[simplices[i], "values"], weights[i]
                 )
-            # print()
 
             assert(not subset["interpolated"].isnull().to_numpy().any())
 
             # 4. Find points over threshold
             subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
+
+            # # Draw new samples by finding the simplex point that contributed most in the wrong direction,
+            # # i.e. weight * value had the largest difference
+            # # new sample is at halfway point between interpolation point and that simplex point
+            #
+            # # for plotting...
+            # samples = pd.DataFrame(columns=coord_list)
+            # for i, index in enumerate(subset[subset["diff"] > dex_threshold].index):
+            #     simplex = tri.find_simplex(
+            #         subset.loc[
+            #             index,
+            #             coord_list
+            #         ].to_numpy()
+            #     ).flatten()     # indices of simplices
+            #
+            #     simplex = tri.simplices[simplex] # indices of points
+            #     simplex = simplex.flatten()
+            #     simplex = bigset.loc[bigset.index[simplex], :]   # actual points
+            #
+            #
+            #     largest_difference = 0
+            #     largest_difference_pos = None
+            #     w = weights[subset.index.get_loc(index)]
+            #     for j, jndex in enumerate(simplex.index):
+            #         diff = np.abs(subset.loc[index, "values"] - w[j] * simplex.loc[jndex, "values"])
+            #
+            #         if diff > largest_difference:
+            #             largest_difference = diff
+            #             largest_difference_pos = j
+            #
+            #     endpoint = simplex.iloc[largest_difference_pos,:]
+            #
+            #     new_point = {}
+            #     for coord in coord_list:
+            #         new_point[coord] = (float(subset.loc[index, coord]) + float(endpoint[coord])) / 2
+            #
+            #     new_point = pd.DataFrame(new_point, [0])
+            #     new_points = pd.concat((new_points, new_point), ignore_index=True)
+            #     samples = pd.concat((samples, new_point), ignore_index=True)
+
+
+
 
             # Draw new samples by finding geometric centers of the simplices containing the points over threshold
             if not subset[subset["diff"] > dex_threshold].empty:
@@ -321,10 +364,25 @@ def sample(
                 )
 
                 for i in range(simplices.shape[0]):
-                    simplex_points[i] = bigset.loc[
-                        bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-                        coord_list
-                    ].to_numpy()
+                    try:
+                        simplex_points[i] = bigset.loc[
+                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                            coord_list
+                        ].to_numpy()
+                    except ValueError:
+                        print(simplex_points[i])
+                        print(simplex_points[i].shape)
+                        print(bigset.index[simplices[i]])
+                        print(bigset.loc[
+                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                            coord_list
+                        ].to_numpy())
+                        print(bigset.loc[
+                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                            coord_list
+                        ].to_numpy().shape)
+                        exit()
+
 
                 # new samples = averages (centers) of the points making up the simplices
                 samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
@@ -335,22 +393,32 @@ def sample(
                 print(f"No points over threshold in partition {partition}")
 
             # TODO: Triangulation plotting? Only really works in 2D
-            # if plot_iterations:
-            #     ax[partition].triplot(a[:, 0], a[:, 1], tri.simplices)
-            #     ax[partition].plot(a[:, 0], a[:, 1], "ko")
-            #     for j in range(over_thresh.shape[0]):
-            #         ax[partition].plot([over_thresh[j, 0], samples[j][0]], [over_thresh[j, 1], samples[j][1]], "red")
-            #         ax[partition].plot([over_thresh[j, 0]], [over_thresh[j, 1]], "ro")
-            #
-            #         if dimensions:
-            #             rect = patches.Rectangle((dimensions[0][0], dimensions[1][0]),
-            #                                      dimensions[0][1] - dimensions[0][0],
-            #                                      dimensions[1][1] - dimensions[1][0], edgecolor="green", fill=False)
-            #             ax[partition].add_patch(rect)
-            #
-            #     ax[partition].set_title("Delaunay Partition " + str(partitions))
-            #     ax[partition].set_xlabel("T")
-            #     ax[partition].set_ylabel("nH")
+            if debug_plot_2d and not subset[subset["diff"] > dex_threshold].empty:
+                ax[partition].triplot(bigset.loc[:, "T"], bigset.loc[:, "nH"], tri.simplices)
+                ax[partition].plot(bigset.loc[:, "T"], bigset.loc[:, "nH"], "ko")
+                for i, index in enumerate(subset[subset["diff"] > dex_threshold].index):
+                    # Plot outliers
+                    ax[partition].plot(subset.loc[index, "T"], subset.loc[index, "nH"], "ro")
+                    # Plot lines to new samples
+                    ax[partition].plot(
+                        [subset.loc[index, "T"], samples.loc[i, "T"]],
+                        [subset.loc[index, "nH"], samples.loc[i, "nH"]],
+                        "red"
+                    )
+
+
+                    rect = patches.Rectangle(
+                        (param_space["T"][0], param_space["nH"][0]),
+                        param_space["T"][1] - param_space["T"][0],
+                        param_space["nH"][1] - param_space["nH"][0],
+                        edgecolor="green",
+                        fill=False
+                    )
+                    ax[partition].add_patch(rect)
+
+                ax[partition].set_title("Delaunay Partition " + str(n_partitions))
+                ax[partition].set_xlabel("T")
+                ax[partition].set_ylabel("nH")
 
             # Write interpolated and diffs back into original points dataframe
             # TODO: IMPORTANT Verify this looks as expected after all partitions are done
@@ -366,8 +434,14 @@ def sample(
             points.loc[subset.index, "diff"] = subset["diff"]
             assert(not subset.loc[:,"interpolated"].isnull().to_numpy().any())
 
-        timeB = time.time()
+        if debug_plot_2d:
+            fig.savefig(
+                os.path.join(output_folder, "Partitions" + str(iteration) + ".png"),
+                bbox_inches="tight"
+            )
 
+
+        timeB = time.time()
 
         # Calculate some stats/diagnostics
 
@@ -397,7 +471,6 @@ def sample(
 
         # diagnostics
         print("Total time to interpolate and sample:".ljust(50), seconds_to_human_readable(timeB - timeA))
-        print(timeB - timeA)
         print("Total points before sampling".ljust(50), total_count)
         print("Points in core".ljust(50), in_bounds_count)
         print("Points in margins".ljust(50), outside_bounds_count)
@@ -444,11 +517,12 @@ def sample(
         if not os.path.exists(iteration_folder):
             os.mkdir(iteration_folder)
         else:
-            choice = input(f"Attempting to write into non-empty folder {iteration_folder}. Proceed? (y/n)")
-
-            if choice not in ["y", "Y", "yes", "Yes"]:
-                print("Aborting...")
-                exit()
+            # choice = input(f"Attempting to write into non-empty folder {iteration_folder}. Proceed? (y/n)")
+            #
+            # if choice not in ["y", "Y", "yes", "Yes"]:
+            #     print("Aborting...")
+            #     exit()
+            raise RuntimeWarning(f"Iteration folder {iteration_folder} is not empty")
 
 
         # Add completely random new points
@@ -589,7 +663,7 @@ def _load_existing_data(folder, filename_pattern, coordinates):
     return points
 
 
-def _set_up_grid(num_per_dim, parameter_space, margins):
+def _set_up_grid(num_per_dim, parameter_space, margins, perturbation_scale=None):
     """
     Fills parameter space with a grid as starting point. Takes margins into account.
 
@@ -598,6 +672,7 @@ def _set_up_grid(num_per_dim, parameter_space, margins):
     :param margins:
     :param rad_parameter_space:
     :param rad_parameter_margins:
+    :param perturbation_scale
     :return:
     """
     param_space_with_margins = _get_param_space_with_margins(
@@ -612,6 +687,17 @@ def _set_up_grid(num_per_dim, parameter_space, margins):
     # https://stackoverflow.com/a/46744050
     index = pd.MultiIndex.from_product(param_grid, names=param_names)
     points = pd.DataFrame(index=index).reset_index()
+
+    if perturbation_scale:
+        for coord in param_names:
+            coord_max = max(param_space_with_margins[coord])
+            coord_min = min(param_space_with_margins[coord])
+            perturb_coord_scale = perturbation_scale * np.abs(coord_max - coord_min)
+            for i in points.loc[
+                (points[coord] > coord_min) &
+                (points[coord] < coord_max),    # exclude edges
+                coord].index:
+                points.loc[i, coord] += perturb_coord_scale * np.random.random() - 0.5 * perturb_coord_scale
 
     points["values"] = np.nan
 
