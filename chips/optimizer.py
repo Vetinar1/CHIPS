@@ -216,6 +216,7 @@ def sample(
     corners = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, corners, rad_bg, n_jobs)
     points = pd.concat((points, corners), ignore_index=True)
     points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+    assert(not points.index.duplicated().any())
     points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, points, rad_bg, n_jobs)
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial evaluations")
@@ -257,6 +258,7 @@ def sample(
 
         timeA = time.time()
         for partition in range(n_partitions):
+            assert(not points.index.duplicated().any())
             # TODO This part uses a lot of deep copies, might be inefficient
             subset = points.loc[partition::n_partitions].copy(deep=True)
             bigset = pd.concat((points, subset)).drop_duplicates(keep=False)
@@ -267,19 +269,22 @@ def sample(
             # Always include corners to ensure convex hull
             bigset = pd.concat((bigset, corners))
             bigset = bigset.drop_duplicates()
+            # bigset = bigset.sort_index()
 
-            # Need to reset the bigset index due to the concatenation
-            # Since the bigset index is not relevant again - unlike the subset index - this should be fine
+            # # Need to reset the bigset index due to the concatenation
+            # # Since the bigset index is not relevant again - unlike the subset index - this should be fine
             bigset = bigset.reset_index()
+            # print(bigset.loc[bigset.index.duplicated(keep=False)])
+            assert(not bigset.index.duplicated().any())
 
             # dont consider points in margins
             for c, edges in coordinates.items():
                 subset = subset.loc[(subset[c] > edges[0]) & (subset[c] < edges[1])]
 
-            tri = spatial.Delaunay(bigset[coordinates].to_numpy())
-            simplex_indices = tri.find_simplex(subset[coordinates].to_numpy())
-            simplices  = tri.simplices[simplex_indices]
-            transforms = tri.transform[simplex_indices]
+            tri = spatial.Delaunay(bigset[coord_list].to_numpy())
+            simplex_indices = tri.find_simplex(subset[coord_list].to_numpy())
+            simplices       = tri.simplices[simplex_indices]
+            transforms      = tri.transform[simplex_indices]
 
             # The following is adapted from
             # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
@@ -287,7 +292,7 @@ def sample(
             bary = np.einsum(
                 "ijk,ik->ij",
                 transforms[:,:N,:N],
-                subset[coordinates].to_numpy() - transforms[:, N, :]
+                subset[coord_list].to_numpy() - transforms[:, N, :]
             )
 
             # 2. Add dependent barycentric coordinate to obtain weights
@@ -297,7 +302,11 @@ def sample(
             # TODO vectorize
             for i, index in enumerate(subset.index):
                 subset.loc[index, "interpolated"] = np.inner(
-                    points.loc[simplices[i], "values"], weights[i]
+                    bigset.loc[
+                        bigset.index[simplices[i]],
+                        "values"
+                    ],
+                    weights[i]
                 )
 
             assert(not subset["interpolated"].isnull().to_numpy().any())
@@ -474,7 +483,8 @@ def sample(
         print("Total points before sampling".ljust(50), total_count)
         print("Points in core".ljust(50), in_bounds_count)
         print("Points in margins".ljust(50), outside_bounds_count)
-        print(f"Points in core over threshold ({dex_threshold})".ljust(50), over_thresh_count, f"/ {over_thresh_fraction*100}%")
+        print(f"Points in core over threshold ({dex_threshold})".ljust(50), over_thresh_count,
+              f"/ {in_bounds_count} ({round(over_thresh_fraction*100, 2)}%)")
         print("Number of new samples".ljust(50), len(new_points.index))
         print("Largest interpolation error".ljust(50), max_diff)
 
@@ -552,6 +562,7 @@ def sample(
             n_jobs
         )
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
+        print(f"Total time: {round(time.time() - timeBeginLoop, 2)}")
 
         print("\n\n\n")
 
