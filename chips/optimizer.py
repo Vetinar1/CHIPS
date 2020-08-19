@@ -185,7 +185,7 @@ def sample(
 
     print("Setting up grid")
     if initial_grid:
-        grid_points = _set_up_grid(initial_grid, coordinates, margins, perturbation_scale)
+        grid_points = _set_up_amorphous_grid(initial_grid, coordinates, margins, perturbation_scale)
         points = pd.concat((points, grid_points))
 
     # The "corners" of the parameter space will work as convex hull, ensuring that all other points are contained
@@ -314,92 +314,92 @@ def sample(
             # 4. Find points over threshold
             subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
 
-            # Draw new samples by finding the simplex point that contributed most in the wrong direction,
-            # i.e. weight * value had the largest difference
-            # new sample is at halfway point between interpolation point and that simplex point
-
-            # for plotting...
-            samples = pd.DataFrame(columns=coord_list)
-            for i, index in enumerate(subset[subset["diff"] > dex_threshold].index):
-                simplex = tri.find_simplex(
-                    subset.loc[
-                        index,
-                        coord_list
-                    ].to_numpy()
-                ).flatten()     # indices of simplices
-
-                simplex = tri.simplices[simplex] # indices of points
-                simplex = simplex.flatten()
-                simplex = bigset.loc[bigset.index[simplex], :]   # actual points
-
-
-                largest_difference = 0
-                largest_difference_pos = None
-                w = weights[subset.index.get_loc(index)]
-                for j, jndex in enumerate(simplex.index):
-                    diff = np.abs(subset.loc[index, "values"] - w[j] * simplex.loc[jndex, "values"])
-
-                    if diff > largest_difference:
-                        largest_difference = diff
-                        largest_difference_pos = j
-
-                endpoint = simplex.iloc[largest_difference_pos,:]
-
-                new_point = {}
-                for coord in coord_list:
-                    new_point[coord] = (float(subset.loc[index, coord]) + float(endpoint[coord])) / 2
-
-                new_point = pd.DataFrame(new_point, [0])
-                new_points = pd.concat((new_points, new_point), ignore_index=True)
-                samples = pd.concat((samples, new_point), ignore_index=True)
-
-
-
-
-            # # Draw new samples by finding geometric centers of the simplices containing the points over threshold
-            # if not subset[subset["diff"] > dex_threshold].empty:
-            #     # TODO: Reusing old variables is not clean
-            #     simplex_indices = tri.find_simplex(
+            # # Draw new samples by finding the simplex point that contributed most in the wrong direction,
+            # # i.e. weight * value had the largest difference
+            # # new sample is at halfway point between interpolation point and that simplex point
+            #
+            # # for plotting...
+            # samples = pd.DataFrame(columns=coord_list)
+            # for i, index in enumerate(subset[subset["diff"] > dex_threshold].index):
+            #     simplex = tri.find_simplex(
             #         subset.loc[
-            #             subset["diff"] > dex_threshold,
+            #             index,
             #             coord_list
             #         ].to_numpy()
-            #     )
-            #     simplices       = tri.simplices[simplex_indices]
+            #     ).flatten()     # indices of simplices
             #
-            #     # Shape: (N_simplices, N_points_per_simplex, N_coordinates_per_point)
-            #     simplex_points = np.zeros(
-            #         (simplices.shape[0], simplices.shape[1], simplices.shape[1]-1)
-            #     )
-            #
-            #     for i in range(simplices.shape[0]):
-            #         try:
-            #             simplex_points[i] = bigset.loc[
-            #                 bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-            #                 coord_list
-            #             ].to_numpy()
-            #         except ValueError:
-            #             print(simplex_points[i])
-            #             print(simplex_points[i].shape)
-            #             print(bigset.index[simplices[i]])
-            #             print(bigset.loc[
-            #                 bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-            #                 coord_list
-            #             ].to_numpy())
-            #             print(bigset.loc[
-            #                 bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-            #                 coord_list
-            #             ].to_numpy().shape)
-            #             exit()
+            #     simplex = tri.simplices[simplex] # indices of points
+            #     simplex = simplex.flatten()
+            #     simplex = bigset.loc[bigset.index[simplex], :]   # actual points
             #
             #
-            #     # new samples = averages (centers) of the points making up the simplices
-            #     samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
-            #     samples = pd.DataFrame(samples, columns=coord_list)
-            #     new_points = pd.concat((new_points, samples))
-            #     new_points = new_points.drop_duplicates()
-            # else:
-            #     print(f"No points over threshold in partition {partition}")
+            #     largest_difference = 0
+            #     largest_difference_pos = None
+            #     w = weights[subset.index.get_loc(index)]
+            #     for j, jndex in enumerate(simplex.index):
+            #         diff = np.abs(subset.loc[index, "values"] - w[j] * simplex.loc[jndex, "values"])
+            #
+            #         if diff > largest_difference:
+            #             largest_difference = diff
+            #             largest_difference_pos = j
+            #
+            #     endpoint = simplex.iloc[largest_difference_pos,:]
+            #
+            #     new_point = {}
+            #     for coord in coord_list:
+            #         new_point[coord] = (float(subset.loc[index, coord]) + float(endpoint[coord])) / 2
+            #
+            #     new_point = pd.DataFrame(new_point, [0])
+            #     new_points = pd.concat((new_points, new_point), ignore_index=True)
+            #     samples = pd.concat((samples, new_point), ignore_index=True)
+
+
+
+
+            # Draw new samples by finding geometric centers of the simplices containing the points over threshold
+            if not subset[subset["diff"] > dex_threshold].empty:
+                # TODO: Reusing old variables is not clean
+                simplex_indices = tri.find_simplex(
+                    subset.loc[
+                        subset["diff"] > dex_threshold,
+                        coord_list
+                    ].to_numpy()
+                )
+                simplices       = tri.simplices[simplex_indices]
+
+                # Shape: (N_simplices, N_points_per_simplex, N_coordinates_per_point)
+                simplex_points = np.zeros(
+                    (simplices.shape[0], simplices.shape[1], simplices.shape[1]-1)
+                )
+
+                for i in range(simplices.shape[0]):
+                    try:
+                        simplex_points[i] = bigset.loc[
+                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                            coord_list
+                        ].to_numpy()
+                    except ValueError:
+                        print(simplex_points[i])
+                        print(simplex_points[i].shape)
+                        print(bigset.index[simplices[i]])
+                        print(bigset.loc[
+                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                            coord_list
+                        ].to_numpy())
+                        print(bigset.loc[
+                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                            coord_list
+                        ].to_numpy().shape)
+                        exit()
+
+
+                # new samples = averages (centers) of the points making up the simplices
+                samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
+                samples = pd.DataFrame(samples, columns=coord_list)
+                new_points = pd.concat((new_points, samples))
+                new_points = new_points.drop_duplicates()
+            else:
+                print(f"No points over threshold in partition {partition}")
 
             # TODO: Triangulation plotting? Only really works in 2D
             if debug_plot_2d and not subset[subset["diff"] > dex_threshold].empty:
@@ -711,6 +711,57 @@ def _set_up_grid(num_per_dim, parameter_space, margins, perturbation_scale=None)
                 points.loc[i, coord] += perturb_coord_scale * np.random.random() - 0.5 * perturb_coord_scale
 
     points["values"] = np.nan
+
+    return points
+
+
+def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_scale):
+    """
+    Uses Poisson disc sampling to set up an amorphous (instead of regular) grid
+    https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph07-poissondisk.pdf
+
+    :param num_per_dim:
+    :param parameter_space:
+    :param margins:
+    :param rad_parameter_space:
+    :param rad_parameter_margins:
+    :param perturbation_scale
+    :return:
+    """
+    # Take regular grid, no perturbation
+    points_full = _set_up_grid(num_per_dim, parameter_space, margins)
+
+    # Cut out all the "middle values"
+    points = pd.DataFrame(columns=points_full.columns)
+    for column in points_full.columns:
+        points = pd.concat((
+            points,
+            points_full.loc[
+                (points_full[column] == points_full[column].min()) | (points_full[column] == points_full[column].max()),
+                :
+            ]
+        )).drop_duplicates(ignore_index=True)
+
+
+    # Fill the middle using Poisson disc sampling
+    # Generate nd unit cube filled with samples
+    if not perturbation_scale:
+        perturbation_scale = 0.1
+    core = poisson_disc_sampling(
+        np.array([[0, 1]] * len(list(parameter_space.keys()))),
+        perturbation_scale
+    )
+
+    # Stretch cube to fit parameter space
+    core_columns = list(points.columns)
+    core_columns.remove("values")
+    core = pd.DataFrame(core, columns=core_columns)
+    for param, limits in parameter_space.items():
+        core[param] = (max(limits) - min(limits)) * core[param] + min(limits)
+
+    core["values"] = np.nan
+
+    points = pd.concat((points, core), ignore_index=True)
 
     return points
 

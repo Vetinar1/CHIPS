@@ -28,7 +28,7 @@ out = sample(
     },
     existing_data=None, # TODO: Testing
     initial_grid=7,
-    perturbation_scale=0.05,
+    perturbation_scale=0.1,
     filename_pattern=None,
 
     dex_threshold=0.1,

@@ -139,3 +139,85 @@ def sample_simplices(simplices):
         samples[i] = sample_simplex(simplices[i])
 
     return samples
+
+
+import matplotlib.pyplot as plt
+import random
+def poisson_disc_sampling(shape, r, k=30):
+    """
+    https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph07-poissondisk.pdf
+
+    This implementation does not use a grid, which means the runtime is a lot worse than O(N). should be ok though
+
+    Uses euclidean distance. Normalize your parameter space.
+
+    :param shape:
+    :param r:
+    :param k:
+    :return:
+    """
+    n = shape.shape[0]
+    start = np.random.random(n)
+    start = (shape[:,1] - shape[:,0]) * start + shape[:,0]
+
+    out = np.zeros((1, n))
+    out[0] = start
+    active_list = [start]
+
+    while active_list:
+        # Who would have thought this is the most straightforward way to draw a random sample without replacement?
+        random.shuffle(active_list)
+        curr = active_list.pop(0)
+
+        # Uniform sampling on d-spheres and balls, method 22:
+        # http://extremelearning.com.au/how-to-generate-uniformly-random-points-on-n-spheres-and-n-balls/
+
+        for i in range(k):
+            # Filter out points with distance <r, leaving only the [r, 2r] annulus
+            for i in range(1000): # while True: without risk of infinite loop
+                u = np.random.normal(0, 1, n+2)
+                norm = np.sum(u**2)**0.5
+                u = u/norm
+
+                x = u[:n] * (2*r)
+
+                if np.sqrt(np.sum(x**2)) >= r:
+                    break
+
+            x += curr
+
+            outofbounds = False
+            for i, limits in enumerate(shape):
+                if x[i] < limits[0] or x[i] > limits[1]:
+                    outofbounds = True
+
+            if outofbounds:
+                continue
+
+            x  = np.reshape(x, (1, x.shape[0]))
+
+            # See if its too close to any nearby points
+            # distances between x and all other points
+            distances = np.sum(
+                (out - np.repeat(x, out.shape[0], axis=0))**2,
+                axis=1
+            )
+
+            if min(distances) < r**2:
+                continue
+
+            out = np.vstack((out, x))
+            active_list.append(x.flatten())
+            active_list.append(curr)
+            break
+
+    return out
+
+if __name__ == "__main__":
+    poisson_disc_sampling(
+        np.array(((0, 100), (0, 100))),
+        8,
+        k=10
+    )
+
+
