@@ -582,15 +582,16 @@ def sample(
             n_jobs
         )
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
-        print(f"Total time: {round(time.time() - timeBeginLoop, 2)}")
+        print(f"Total time: {seconds_to_human_readable(round(time.time() - timeBeginLoop, 2))}")
         iteration_time = time.time() - timeA
-        print(f"Time for current iteration: {iteration_time}")
+        print(f"Time for current iteration: {seconds_to_human_readable(round(iteration_time, 2))}")
 
         print("\n\n\n")
 
     total_time = time.time() - timeBeginLoop
     total_time_readable = seconds_to_human_readable(total_time)
 
+    print()
     print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
@@ -679,7 +680,7 @@ def _load_point(filename, filename_pattern, coordinates):
         if coordinate not in list(point.keys()):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
-    point["values"] = np.loadtxt(filename, usecols=3)
+    point["values"] = float(np.loadtxt(filename, usecols=3))
 
     return point
 
@@ -704,7 +705,7 @@ def _load_existing_data(folder, filename_pattern, coordinates):
         if filename.endswith(".cool"):
             points.append(_load_point(filename, filename_pattern, coordinates))
 
-    points = pd.DataFrame(points)
+    points = pd.DataFrame(points).astype(float)
     return points
 
 
