@@ -47,27 +47,45 @@ def sample(
         debug_plot_2d=False
 ):
     """
+    Main function of the library.
+    Iteratively:
+    1. Triangulate all current samples
+    2. Interpolate all sample positions based on neighbors; get difference between interpolation and correct value
+    3. Draw new samples based on interpolation errors
+    
+    ...until exit condition is reached, e.g. desired accuracy.
 
-    :param cloudy_input:                    String. Cloudy input or cloudy input file.
-    :param cloudy_source_path:              String. Path to source/
-    :param output_folder:
-    :param param_space:                    "key":(min, max)
-    :param param_space_margins:             2 values: absolute. 1 value: relative
-    :param rad_params:                      "key":(min, max). key doubles as filepath
+    :param cloudy_input:                    String. Cloudy input or path to cloudy input file.
+    :param cloudy_source_path:              String. Path to cloudy's source/ folder
+    :param output_folder:                   Path to output folder. Output folder should be empty/nonexistent.
+    :param param_space:                     "key":(min, max)
+                                            key: The variable to fill in in the cloudy file, e.g. z, T, hden, etc
+                                                 Must match the string format syntax in the cloudy input string
+                                            (min, max): The edges of the parameter space along that parameter axis
+                                                        Not accounting for margins
+    :param param_space_margins:             How much buffer to add around the parameter space for interpolation,
+                                            per parameter. If one value per parameter: Relative, if two: Absolute
+    :param rad_params:                      "key":(min, max).
+                                            key: path to radiation input file; must contain data in format f(x) x
     :param rad_params_margins:              2 values: absolute. 1 value: relative
     :param rad_params_names:                TODO optional prettier names
-    :param existing_data:
+    :param existing_data:                   TODO test
     :param initial_grid:                    How many samples in each dimension in initial grid. 0 to disable
-    :param dex_threshold:
-    :param over_thresh_max_fraction:
-    :param dex_max_allowed_diff:
-    :param random_samples_per_iteration:
-    :param n_jobs:
-    :param n_partitions:
-    :param max_iterations:
-    :param max_storage_gb:
-    :param max_time:
-    :param plot_iterations:
+    :param dex_threshold:                   How close an interpolation has to be to the real value to be considered
+                                            acceptable. Absolute value, in dex
+    :param over_thresh_max_fraction:        Fraction of interpolations that may be over dex_threshold for interpolation
+                                            to be considered "good enough".
+    :param dex_max_allowed_diff:            Largest interpolation error permitted.
+    :param random_samples_per_iteration:    How many completely random samples to add each iteration
+    :param n_jobs:                          How many cloudy jobs to run in parallel
+    :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
+    :param max_iterations:                  Exit condition: Quit after this many iterations
+    :param max_storage_gb:                  Exit condition: Quit after this much storage space has been used
+                                                Warning: Only checked between iterations. Will be exceeded
+                                                TODO: Use previous iteration's storage requirements as guess
+    :param max_time:                        Exit condition: Quit after this much time.
+                                                TODO: Use previous iteration's runtime as guess
+    :param plot_iterations:                 Whether to save plots of the parameter space each iteration.
     :return:
     """
     ####################################################################################################################
@@ -489,7 +507,7 @@ def sample(
         print("Largest interpolation error".ljust(50), max_diff)
 
         if plot_iterations:
-            _plot_parameter_space(points, new_points, coordinates, output_folder, iteration)
+            _plot_parameter_space(points, new_points, coord_list, output_folder, iteration)
 
 
         # Check the various conditions for quitting
@@ -577,10 +595,10 @@ def _get_corners(param_space):
     """
     For a given parameter space, returns a pandas Dataframe containing its corners, with a nan values column.
 
-    TODO: Generalize
+    TODO: Generalize values
 
-    :param param_space:
-    :return:
+    :param param_space:     As given to sample()
+    :return:                Pandas Dataframe
     """
     keys = list(param_space.keys())
     values = [param_space[key] for key in param_space.keys()] # ensuring order
@@ -597,7 +615,17 @@ def _get_corners(param_space):
     return corners
 
 
-def _plot_parameter_space(points, new_points, coordinates, output_folder, suffix):
+def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix):
+    """
+    Plot parameter space using a seaborn pairplot.
+
+    :param points:          Points dataframe as used in sample; "old points"
+    :param new_points:      Points dataframe as used in sample; "new points" (different color)
+    :param coord_list:      coord_list as used in sample; keys are
+    :param output_folder:   Folder to save plots in
+    :param suffix:          File will be saved as "iteration{suffix}.png"
+    :return:
+    """
     begin = time.time()
     points["hue"]     = "Older Iterations"
     new_points["hue"] = "Latest Iteration"
@@ -606,7 +634,7 @@ def _plot_parameter_space(points, new_points, coordinates, output_folder, suffix
     grid = sns.pairplot(
         fullpoints,
         diag_kind="hist",
-        vars=coordinates,
+        vars=coord_list,
         hue="hue",
         markers="o",
         plot_kws={
@@ -630,8 +658,11 @@ def _plot_parameter_space(points, new_points, coordinates, output_folder, suffix
 
 def _load_point(filename, filename_pattern, coordinates):
     """
-    Load Ctot from the given file. TODO: Generalize
-    Filename needs to contain the full path to the file.
+    Load Ctot from the given cloudy cooling output ("*.cool") file. TODO: Generalize
+    Filename needs to contain the full path to the file, but not the file ending.
+
+    The filename pattern is used to parse the coordinates at which Ctot is given.
+    TODO Load from inside the file itself instead?
 
     :param filename:
     :param filename_pattern:
@@ -652,12 +683,12 @@ def _load_point(filename, filename_pattern, coordinates):
 
 def _load_existing_data(folder, filename_pattern, coordinates):
     """
-    Loads Ctot. TODO Needs generic version.
+    Loads Ctot from all files ending in .cool in the given folder and subfolders.
 
-    # TODO Needs a way of handling file extensions
+    # TODO Generalize file endings, maybe
 
     :param folder:
-    :return:
+    :return:            Dataframe of points
     """
     # Find all files in the specified folder (and subfolders)
     filenames = []
@@ -676,15 +707,15 @@ def _load_existing_data(folder, filename_pattern, coordinates):
 
 def _set_up_grid(num_per_dim, parameter_space, margins, perturbation_scale=None):
     """
-    Fills parameter space with a grid as starting point. Takes margins into account.
+    Fills parameter space with a regular grid as starting point. Takes margins into account.
+    TODO Specify number of samples per dimension
 
-    :param num_per_dim:
-    :param parameter_space:
-    :param margins:
-    :param rad_parameter_space:
-    :param rad_parameter_margins:
-    :param perturbation_scale
-    :return:
+    :param num_per_dim:             Amount of samples in each dimension (int)
+    :param parameter_space:         Parameter space as used in sample(); I think its called coordinates there TODO
+    :param margins:                 Margins of all parameters as used in sample()
+    :param perturbation_scale:      If given, perturbations of this (max) size are added to each interior point.
+                                    Scale is relative to extent of space along that dimension
+    :return:                        Dataframe of points
     """
     param_space_with_margins = _get_param_space_with_margins(
         parameter_space, margins
@@ -720,12 +751,14 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_s
     Uses Poisson disc sampling to set up an amorphous (instead of regular) grid
     https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph07-poissondisk.pdf
 
-    :param num_per_dim:
-    :param parameter_space:
-    :param margins:
-    :param rad_parameter_space:
-    :param rad_parameter_margins:
-    :param perturbation_scale
+    First sets up a regular grid using _set_up_grid(), then cuts out the middle to leave a regular hull, then fills
+    it with poisson disc sampling. Not pretty but as long as it works
+
+    :param num_per_dim:             See _set_up_grid()
+    :param parameter_space:         See _set_up_grid()
+    :param margins:                 See _set_up_grid()
+    :param perturbation_scale:      NOT used for perturbation, but actually passed as radius to the poisson disc
+                                    sampling function TODO Prettify
     :return:
     """
     # Take regular grid, no perturbation
@@ -768,12 +801,10 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_s
 
 def _get_param_space_with_margins(parameter_space, margins):
     """
-    Returns entire parameter space - including radiation component - with margins.
+    Returns entire parameter space with margins "applied".
 
     :param parameter_space:
     :param margins:
-    :param rad_parameter_space:
-    :param rad_parameter_margins:
     :return:
     """
     param_space_with_margins = {}
@@ -795,6 +826,20 @@ def _get_param_space_with_margins(parameter_space, margins):
 
 
 def _get_rad_bg_as_function(rad_params):
+    """
+    Take rad_params as given to sample(). Load the radiation files specified in the keys. Interpolate each spectrum
+    using InterpolatedUnivariateSpline.
+
+    Limit energy range to what cloudy can handle. Then resample it logarithmically at ~<4000 points (maximum input
+    line count for cloudy input files)
+
+    Return function that:
+    - Takes a dict containing a multiplier for each of these radiation components
+    - Evaluates each radiation component's interpolator at all energies and multiplies with respective factor
+    - Returns the sum to use as the total radiation background
+    :param rad_params:
+    :return:
+    """
     if not rad_params:
         return lambda x: None
 
@@ -811,13 +856,13 @@ def _get_rad_bg_as_function(rad_params):
     combined_energies = np.sort(np.concatenate([rad_data[k] for k in rad_params.keys()]).flatten())
     # Cloudy only considers energies between 3.04e-9 Ryd and 7.453e6 Ryd, see Hazy p. 33
     combined_energies = np.clip(combined_energies, 3.04e-9, 7.354e6)
+    x = np.geomspace(min(combined_energies), max(combined_energies), 3900)
 
     def rad_bg_function(rad_multipliers):
         # TODO: Verify function behaves as expected (plots!)
         # Note: Cloudy can only handle 4000 lines of input at a time...
         # f_nu = sum([interpolators[k](combined_energies) * rad_multipliers[k] for k in rad_multipliers.keys() if k in valid_keys])
         # TODO: Make sure this works with logspace, or find better solution altogether
-        x = np.geomspace(min(combined_energies), max(combined_energies), 3900)
         f_nu = sum([interpolators[k](x) * rad_multipliers[k] for k in rad_multipliers.keys() if k in valid_keys])
 
         hstack_shape = (f_nu.shape[0], 1)
@@ -857,6 +902,12 @@ def _get_rad_bg_as_function(rad_params):
 
 
 def _f_nu_to_string(f_nu):
+    """
+    Helper function to turn a spectrum into a string that can be used in a cloudy input file.
+
+    :param f_nu:    Numpy array, Shape (N, 2). TODO whats on which side
+    :return:
+    """
     if f_nu is None:
         return ""
 
@@ -873,13 +924,14 @@ def _f_nu_to_string(f_nu):
 
 def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern, points, rad_bg_function, n_jobs):
     """
+    Evaluate the given points with cloudy using the given file template.
 
     :param input_file:          String representing the cloudy in put file template
-    :param path_to_source:
-    :param output_folder:       Note: Make sure to include iteration!
-    :param filename_pattern:
-    :param points:
-    :param rad_bg_function:
+    :param path_to_source:      As in sample()
+    :param output_folder:       Folder to move files to after evaluation
+    :param filename_pattern:    As in sample()
+    :param points:              Dataframe, as in sample()
+    :param rad_bg_function:     As returned from _get_rad_bg_as_function()
     :return:
     """
     filenames = []
