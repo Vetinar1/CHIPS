@@ -13,7 +13,6 @@ sns.set()
 
 # TODO: Options for cloudy to clean up after itself
 # TODO: Check existence of radiation files
-# TODO: Smart continuation: Should be able to read in existing output folders and keep working on them
 def sample(
         cloudy_input,
         cloudy_source_path,
@@ -69,7 +68,8 @@ def sample(
                                             key: path to radiation input file; must contain data in format f(x) x
     :param rad_params_margins:              2 values: absolute. 1 value: relative
     :param rad_params_names:                TODO optional prettier names
-    :param existing_data:                   TODO test
+    :param existing_data:                   Path to folder containing results of previous run to load. Should use same
+                                            parameters and filename_pattern as current run.
     :param initial_grid:                    How many samples in each dimension in initial grid. 0 to disable
     :param dex_threshold:                   How close an interpolation has to be to the real value to be considered
                                             acceptable. Absolute value, in dex
@@ -81,10 +81,7 @@ def sample(
     :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
     :param max_iterations:                  Exit condition: Quit after this many iterations
     :param max_storage_gb:                  Exit condition: Quit after this much storage space has been used
-                                                Warning: Only checked between iterations. Will be exceeded
-                                                TODO: Use previous iteration's storage requirements as guess
     :param max_time:                        Exit condition: Quit after this much time.
-                                                TODO: Use previous iteration's runtime as guess
     :param plot_iterations:                 Whether to save plots of the parameter space each iteration.
     :return:
     """
@@ -176,6 +173,7 @@ def sample(
     ####################################################################################################################
     ###################################################    Setup    ####################################################
     ####################################################################################################################
+    time1 = time.time()
     rad_bg = _get_rad_bg_as_function(rad_params)
 
     # Compile coordinates and values into easily accessible lists
@@ -188,21 +186,32 @@ def sample(
     values = ["values"]  # TODO
     points = pd.DataFrame(columns=coord_list + values)
 
+    if not filename_pattern:
+        filename_pattern = "__".join(
+            ["_".join(
+                [c, "{" + str(c) + "}"]
+            ) for c in coordinates.keys()]
+        )
+    else:
+        for c in coordinates.keys():
+            if "{" + str(c) + "}" not in filename_pattern:
+                raise RuntimeError(f"Invalid file pattern: Missing {c}")
+
     # Load existing data if applicable
     existing_point_count = 0
     if existing_data:
-        if not os.path.isdir(output_folder):
+        if not os.path.isdir(existing_data):
             raise RuntimeError("Specified existing data at " + str(existing_data) + " but is not a dir or does not exist")
 
-        points = pd.concat(
+        points = pd.concat((
             points,
             _load_existing_data(existing_data, filename_pattern, coordinates)
-        )
+        ))
 
         existing_point_count = len(points.index)
 
-    print("Setting up grid")
     if initial_grid:
+        print("Setting up grid")
         grid_points = _set_up_amorphous_grid(initial_grid, coordinates, margins, perturbation_scale)
         points = pd.concat((points, grid_points))
 
@@ -215,18 +224,6 @@ def sample(
         )
     )
 
-    if not filename_pattern:
-        filename_pattern = "__".join(
-            ["_".join(
-                [c, "{" + str(c) + "}"]
-            ) for c in coordinates.keys()]
-        )
-    else:
-        for c in coordinates.keys():
-            if "{" + str(c) + "}" not in filename_pattern:
-                raise RuntimeError(f"Invalid file pattern: Missing {c}")
-
-    time1 = time.time()
     it0folder = os.path.join(output_folder, "iteration0/")
     if not os.path.exists(it0folder):
         os.mkdir(it0folder)
@@ -237,7 +234,7 @@ def sample(
     assert(not points.index.duplicated().any())
     points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, points, rad_bg, n_jobs)
     time2 = time.time()
-    print(round(time2 - time1, 2), "s to do initial evaluations")
+    print(round(time2 - time1, 2), "s to do initial setup")
     print("\n\n")
 
 
@@ -247,6 +244,7 @@ def sample(
     #################################################    Main Loop    ##################################################
     ####################################################################################################################
     iteration = 0
+    iteration_time = 0
     timeBeginLoop = time.time()
 
     # number of dimensions
@@ -523,21 +521,25 @@ def sample(
             print(f"Reached desired accuracy. Quitting.")
             break
 
-        if max_iterations and iteration > max_iterations:
+        if max_iterations and iteration > max_iterations - 1:
             print(f"Reached maximum number of iterations ({max_iterations}). Quitting.")
             break
 
         if max_storage_gb:
             gb_in_bytes = 1e9   # bytes per gigabyte
             output_size_gb = get_folder_size(output_folder) / gb_in_bytes
+            # iteration0: initial setup
+            prev_iteration_gb = get_folder_size(os.path.join(output_folder, f"iteration{iteration-1}")) / gb_in_bytes
 
-            if output_size_gb > max_storage_gb:
-                print(f"Reached maximum allowed storage ({output_size_gb} GB/{max_storage_gb} GB). Quitting.")
+            if output_size_gb + prev_iteration_gb > max_storage_gb:
+                print(f"Reached maximum allowed storage ({output_size_gb} GB/{max_storage_gb} GB), accounting " +
+                      f"for size of previous iteration ({prev_iteration_gb} GB). Quitting.")
                 break
 
-        if max_time is not None and max_time < time.time() - timeBeginLoop:
+        if max_time is not None and max_time < (time.time() - timeBeginLoop) + iteration_time:
             print(f"Reached maximum calculation time ({seconds_to_human_readable(time.time() - timeBeginLoop)} " +
-                  f"/ {seconds_to_human_readable(max_time)}). Quitting")
+                  f"/ {seconds_to_human_readable(max_time)}), accounting for length of previous iteration " +
+                  f"({seconds_to_human_readable(iteration_time)}). Quitting")
             break
 
 
@@ -581,6 +583,8 @@ def sample(
         )
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
         print(f"Total time: {round(time.time() - timeBeginLoop, 2)}")
+        iteration_time = time.time() - timeA
+        print(f"Time for current iteration: {iteration_time}")
 
         print("\n\n\n")
 
@@ -659,7 +663,7 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
 def _load_point(filename, filename_pattern, coordinates):
     """
     Load Ctot from the given cloudy cooling output ("*.cool") file. TODO: Generalize
-    Filename needs to contain the full path to the file, but not the file ending.
+    Filename needs to contain the full path to the file.
 
     The filename pattern is used to parse the coordinates at which Ctot is given.
     TODO Load from inside the file itself instead?
@@ -668,15 +672,14 @@ def _load_point(filename, filename_pattern, coordinates):
     :param filename_pattern:
     :return:                    Dict
     """
-    point = {}
-    result = parse(filename_pattern, filename)
+    result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
     point = result.named
 
     for coordinate in coordinates:
         if coordinate not in list(point.keys()):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
-    point["values"] = np.loadtxt(filename + ".cool", usecols=3)
+    point["values"] = np.loadtxt(filename, usecols=3)
 
     return point
 

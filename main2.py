@@ -2,9 +2,11 @@ from chips.optimizer import sample
 
 # cloudy h iterative parameter sampler
 
+
+
 out = sample(
     cloudy_input="cloudy.in",
-    cloudy_source_path="cloudy/source", #"~/cloudy_optimizer/source",
+    cloudy_source_path="cloudy/source",
     output_folder="output",
     param_space={
         "T":[2, 8],
@@ -37,7 +39,7 @@ out = sample(
     random_samples_per_iteration=30,
     n_jobs=12,
     n_partitions=10,
-    max_iterations=20,
+    max_iterations=2,
     max_storage_gb=20,
     max_time=0.1*3600,
     plot_iterations=True, # TODO: Testing, Implementation,
