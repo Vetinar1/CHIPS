@@ -21,6 +21,8 @@ def get_folder_size(folder):
     Returns size of folder in bytes. Does not consider subdirectories, links, etc.
     https://stackoverflow.com/a/1392549
 
+    TODO: Consider subdirectories
+
     :param folder:
     :return:
     """
@@ -143,22 +145,29 @@ def sample_simplices(simplices):
     return samples
 
 
-def poisson_disc_sampling(shape, r, k=30):
+def poisson_disc_sampling(space, r, k=30):
     """
+    Sample a space using an evenly spaced, amorphous lattice. For the algorithm and some diagrams see:
     https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph07-poissondisk.pdf
 
-    This implementation does not use a grid, which means the runtime is a lot worse than O(N). should be ok though
+    This implementation does not use a grid/array, which means the runtime is a lot worse than O(N).
+    (It needs to check each other point for neighbors, up to k times, should be O(N^2).)
+    Should be alright if you don't want a huge amount of samples, but TODO: Optimize
 
     Uses euclidean distance. Normalize your parameter space.
 
-    :param shape:
-    :param r:
-    :param k:
-    :return:
+    :param space:       ((min, max), (min, max), ...)
+                        Extents of given space.
+    :param r:           Minimum distance between samples. Samples will be at minimum r and at most 2r apart.
+    :param k:           How many "tries" for new samples to use in each iteration; Default should be fine,
+                        but you might want to increase it in large dimensions.
+    :return:            A numpy array of samples, shape (M, N).
+                        M: Number of samples (depends on r, size of your space)
+                        N: Number of dimensions of space
     """
-    n = shape.shape[0]
+    n = space.shape[0]
     start = np.random.random(n)
-    start = (shape[:,1] - shape[:,0]) * start + shape[:,0]
+    start = (space[:,1] - space[:,0]) * start + space[:,0]
 
     out = np.zeros((1, n))
     out[0] = start
@@ -187,7 +196,7 @@ def poisson_disc_sampling(shape, r, k=30):
             x += curr
 
             outofbounds = False
-            for i, limits in enumerate(shape):
+            for i, limits in enumerate(space):
                 if x[i] < limits[0] or x[i] > limits[1]:
                     outofbounds = True
 
