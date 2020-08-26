@@ -2,6 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 import re
+import random
+import seaborn as sns
 
 def prod(iterable):
     """
@@ -141,8 +143,6 @@ def sample_simplices(simplices):
     return samples
 
 
-import matplotlib.pyplot as plt
-import random
 def poisson_disc_sampling(shape, r, k=30):
     """
     https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph07-poissondisk.pdf
@@ -214,10 +214,26 @@ def poisson_disc_sampling(shape, r, k=30):
     return out
 
 if __name__ == "__main__":
-    poisson_disc_sampling(
-        np.array(((0, 100), (0, 100))),
-        8,
-        k=10
+    points = poisson_disc_sampling(
+        np.array([[0, 1]] * 2),
+        0.08,
+        k=30
     )
 
+    import matplotlib.pyplot as plt
+    plt.plot(points[:,0], points[:,1], "ko")
+    plt.gca().set_aspect(1)
+    plt.show()
+    exit()
+
+    points = pd.DataFrame(points)
+    print(len(points.index))
+
+    grid = sns.pairplot(
+        points,
+        diag_kind="hist",
+        height=6
+    )
+
+    grid.savefig("test.png")
 

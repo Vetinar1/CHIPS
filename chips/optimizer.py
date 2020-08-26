@@ -138,6 +138,7 @@ def sample(
     else:
         print("\tNone")
 
+    # TODO Add perturbation scale etc
     print("Existing data".ljust(50) + str(existing_data))
     print("Points per dimension of initial grid ".ljust(50) + str(initial_grid))
     print("Filename pattern ".ljust(50) + str(filename_pattern))
@@ -572,6 +573,8 @@ def sample(
     print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
+    return points
+
 
 def _get_corners(param_space):
     """
@@ -794,7 +797,7 @@ def _get_param_space_with_margins(parameter_space, margins):
     return param_space_with_margins
 
 
-def _get_rad_bg_as_function(rad_params):
+def _get_rad_bg_as_function(rad_params, output_folder):
     if not rad_params:
         return lambda x: None
 
@@ -852,6 +855,28 @@ def _get_rad_bg_as_function(rad_params):
 
 
         return spectrum
+
+    # Plot radiation background to ensure it looks like its supposed to
+    # Note - does not take into account cloudy radiation bgs, e.g. HM12
+    # TODO How to handle bgs given as function?
+    colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple",
+              "tab:brown", "tab:pink", "tab:gray", "tab:olive", "tab:cyan"]
+            # if you run out of these colors you probably have other, more important issues
+    c = 0
+    for k, v in rad_params.items():
+        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * v[1][0], ".-", color=colors[c])
+        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * (v[1][1] + v[1][0]) / 2, color=colors[c], label=k)
+        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * v[1][1], "--", color=colors[c])
+        c += 1
+
+    plt.title("Radiation background components")
+    plt.legend()
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel(r"$E$ in Ryd")
+    plt.ylabel(r"$4\pi J_\nu / h$")  # TODO Verify units
+    plt.savefig(os.path.join(output_folder, "rad_components.png"))
+    plt.close()
 
     return rad_bg_function
 

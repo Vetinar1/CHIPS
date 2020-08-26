@@ -19,8 +19,8 @@ out = sample(
         #"z":[0, 2.2]
     },
     rad_params={
-        # "hhT6":("spectra/hhT6", [18, 22]),
-        # "SFR":("spectra/SFR", [18, 22])  # TODO no clue if these are reasonable
+        # "hhT6":("spectra/hhT6", [10, 30]),
+        # "SFR":("spectra/SFR", [10, 30])  # TODO no clue if these are reasonable
     },
     rad_params_margins={
         # "hhT6":0.1,
@@ -28,7 +28,7 @@ out = sample(
     },
     existing_data=None, # TODO: Testing
     initial_grid=7,
-    perturbation_scale=0.1,
+    perturbation_scale=0.4,
     filename_pattern=None,
 
     dex_threshold=0.1,
@@ -45,7 +45,7 @@ out = sample(
     debug_plot_2d=True
 )
 
-
+out.to_csv("output/data.csv", index=False)
 
 
 
