@@ -30,7 +30,7 @@ out = sample(
     },
     existing_data=None, # TODO: Testing
     initial_grid=7,
-    perturbation_scale=0.4,
+    perturbation_scale=0.1,
     filename_pattern=None,
 
     dex_threshold=0.1,
@@ -39,7 +39,7 @@ out = sample(
     random_samples_per_iteration=30,
     n_jobs=12,
     n_partitions=10,
-    max_iterations=2,
+    max_iterations=3,
     max_storage_gb=20,
     max_time=0.1*3600,
     plot_iterations=True, # TODO: Testing, Implementation,

@@ -175,7 +175,7 @@ def sample(
     ###################################################    Setup    ####################################################
     ####################################################################################################################
     time1 = time.time()
-    rad_bg = _get_rad_bg_as_function(rad_params)
+    rad_bg = _get_rad_bg_as_function(rad_params, output_folder)
 
     # Compile coordinates and values into easily accessible lists
     coordinates = { # TODO Rename to core
@@ -596,7 +596,13 @@ def sample(
     print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
-    return points
+    print("Building and saving final Delaunay triangulation...")
+    tri = spatial.Delaunay(points[coord_list].to_numpy())
+    np.savetxt(os.path.join(output_folder, "dtriangulation"), tri.simplices.astype(int), delimiter=" ", fmt="%i")
+    np.savetxt(os.path.join(output_folder, "dneighbors"),     tri.neighbors.astype(int), delimiter=" ", fmt="%i")
+    print("Done")
+
+    return points.drop(["interpolated", "diff"], axis=1)
 
 
 def _get_corners(param_space):

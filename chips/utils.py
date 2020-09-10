@@ -224,10 +224,12 @@ def poisson_disc_sampling(space, r, k=30):
 
 if __name__ == "__main__":
     points = poisson_disc_sampling(
-        np.array([[0, 1]] * 2),
-        0.08,
+        np.array([[0, 1]] * 5),
+        0.2,
         k=30
     )
+
+    print(points.shape)
 
     import matplotlib.pyplot as plt
     plt.plot(points[:,0], points[:,1], "ko")
