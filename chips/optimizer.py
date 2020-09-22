@@ -390,25 +390,10 @@ def sample(
                 )
 
                 for i in range(simplices.shape[0]):
-                    try:
-                        simplex_points[i] = bigset.loc[
-                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-                            coord_list
-                        ].to_numpy()
-                    except ValueError:
-                        print(simplex_points[i])
-                        print(simplex_points[i].shape)
-                        print(bigset.index[simplices[i]])
-                        print(bigset.loc[
-                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-                            coord_list
-                        ].to_numpy())
-                        print(bigset.loc[
-                            bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-                            coord_list
-                        ].to_numpy().shape)
-                        exit()
-
+                    simplex_points[i] = bigset.loc[
+                        bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                        coord_list
+                    ].to_numpy()
 
                 # new samples = averages (centers) of the points making up the simplices
                 samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
@@ -598,8 +583,8 @@ def sample(
 
     print("Building and saving final Delaunay triangulation...")
     tri = spatial.Delaunay(points[coord_list].to_numpy())
-    np.savetxt(os.path.join(output_folder, "dtriangulation"), tri.simplices.astype(int), delimiter=" ", fmt="%i")
-    np.savetxt(os.path.join(output_folder, "dneighbors"),     tri.neighbors.astype(int), delimiter=" ", fmt="%i")
+    np.savetxt(os.path.join(output_folder, "dtri.csv"), tri.simplices.astype(int), delimiter=",", fmt="%i")
+    np.savetxt(os.path.join(output_folder, "dneighbours.csv"),     tri.neighbors.astype(int), delimiter=",", fmt="%i")
     print("Done")
 
     return points.drop(["interpolated", "diff"], axis=1)
@@ -774,19 +759,26 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_s
                                     sampling function TODO Prettify
     :return:
     """
-    # Take regular grid, no perturbation
-    points_full = _set_up_grid(num_per_dim, parameter_space, margins)
+    # # Take regular grid, no perturbation
+    # points_full = _set_up_grid(num_per_dim, parameter_space, margins)
+    #
+    # # Cut out all the "middle values"
+    # points = pd.DataFrame(columns=points_full.columns)
+    # for column in points_full.columns:
+    #     points = pd.concat((
+    #         points,
+    #         points_full.loc[
+    #             (points_full[column] == points_full[column].min()) | (points_full[column] == points_full[column].max()),
+    #             :
+    #         ]
+    #     )).drop_duplicates(ignore_index=True)
 
-    # Cut out all the "middle values"
-    points = pd.DataFrame(columns=points_full.columns)
-    for column in points_full.columns:
-        points = pd.concat((
-            points,
-            points_full.loc[
-                (points_full[column] == points_full[column].min()) | (points_full[column] == points_full[column].max()),
-                :
-            ]
-        )).drop_duplicates(ignore_index=True)
+    points = _get_corners(
+        _get_param_space_with_margins(
+            parameter_space,
+            margins,
+        )
+    )
 
 
     # Fill the middle using Poisson disc sampling
