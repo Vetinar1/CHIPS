@@ -71,6 +71,7 @@ def sample(
     :param existing_data:                   Path to folder containing results of previous run to load. Should use same
                                             parameters and filename_pattern as current run.
     :param initial_grid:                    How many samples in each dimension in initial grid. 0 to disable
+                                            Used for outer hull if amorphous grid is used
     :param dex_threshold:                   How close an interpolation has to be to the real value to be considered
                                             acceptable. Absolute value, in dex
     :param over_thresh_max_fraction:        Fraction of interpolations that may be over dex_threshold for interpolation
@@ -134,6 +135,7 @@ def sample(
         input_filled = cloudy_input.format_map({**{k : v[0] for k, v in param_space.items()}, **{"fname":""}})
     except SyntaxError:
         print("Error while filling cloudy input: Missing parameter or syntax error")
+        exit()
 
     ####################################################################################################################
     ################################################    Diagnostics    #################################################
@@ -759,19 +761,19 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_s
                                     sampling function TODO Prettify
     :return:
     """
-    # # Take regular grid, no perturbation
-    # points_full = _set_up_grid(num_per_dim, parameter_space, margins)
-    #
-    # # Cut out all the "middle values"
-    # points = pd.DataFrame(columns=points_full.columns)
-    # for column in points_full.columns:
-    #     points = pd.concat((
-    #         points,
-    #         points_full.loc[
-    #             (points_full[column] == points_full[column].min()) | (points_full[column] == points_full[column].max()),
-    #             :
-    #         ]
-    #     )).drop_duplicates(ignore_index=True)
+    # Take regular grid, no perturbation
+    points_full = _set_up_grid(num_per_dim, parameter_space, margins)
+
+    # Cut out all the "middle values"
+    points = pd.DataFrame(columns=points_full.columns)
+    for column in points_full.columns:
+        points = pd.concat((
+            points,
+            points_full.loc[
+                (points_full[column] == points_full[column].min()) | (points_full[column] == points_full[column].max()),
+                :
+            ]
+        )).drop_duplicates(ignore_index=True)
 
     points = _get_corners(
         _get_param_space_with_margins(

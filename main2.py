@@ -1,8 +1,6 @@
 from chips.optimizer import sample
 
-# cloudy h iterative parameter sampler
-
-
+# cloudy heuristic iterative parameter sampler
 
 out = sample(
     cloudy_input="cloudy.in",
@@ -29,7 +27,7 @@ out = sample(
         # "SFR":0.1
     },
     existing_data=None, # TODO: Testing
-    initial_grid=7,
+    initial_grid=4,
     perturbation_scale=0.1,
     filename_pattern=None,
 
