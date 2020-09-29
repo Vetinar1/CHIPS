@@ -17,6 +17,7 @@ PLOT_C_INTERP = False
 PLOT_P_INTERP = False
 PLOT_DIFF = False
 PLOT_P_TREE = True
+PLOT_VORONOI = True
 
 if PLOT_P_TREE:
     plt.figure(figsize=(10, 10))
@@ -48,6 +49,7 @@ if PLOT_P_TREE:
     plt.plot([2], [-3.92], "bo")
     plt.xlim(1, 9)
     plt.ylim(-5, 5)
+    plt.title("point tree")
     plt.show()
 
 if PLOT_S_TREE:
@@ -89,6 +91,19 @@ if PLOT_S_TREE:
     plt.plot([2], [-3.92], "bo")
     plt.xlim(1, 9)
     plt.ylim(-5, 5)
+    plt.title("simplex tree")
+    plt.show()
+
+
+if PLOT_VORONOI:
+    voronoi = spatial.Voronoi(points[:,:-1])
+    delaunay = spatial.Delaunay(points[:,:-1])
+
+    plt.figure(figsize=(10, 10))
+    # plt.plot(points[:,0], points[:,1], "k.")
+    spatial.delaunay_plot_2d(delaunay, ax=plt.gca())
+    spatial.voronoi_plot_2d(voronoi, ax=plt.gca())
+    plt.plot([2], [-3.92], "bo")
     plt.show()
 
 

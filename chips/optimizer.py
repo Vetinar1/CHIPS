@@ -775,12 +775,12 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_s
             ]
         )).drop_duplicates(ignore_index=True)
 
-    points = _get_corners(
-        _get_param_space_with_margins(
-            parameter_space,
-            margins,
-        )
-    )
+    # points = _get_corners(
+    #     _get_param_space_with_margins(
+    #         parameter_space,
+    #         margins,
+    #     )
+    # )
 
 
     # Fill the middle using Poisson disc sampling
