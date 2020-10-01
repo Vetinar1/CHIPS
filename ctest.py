@@ -14,10 +14,10 @@ print(np.sqrt(tree_radius))
 
 PLOT_S_TREE = False
 PLOT_C_INTERP = False
-PLOT_P_INTERP = False
+PLOT_P_INTERP = True
 PLOT_DIFF = False
-PLOT_P_TREE = True
-PLOT_VORONOI = True
+PLOT_P_TREE = False
+PLOT_VORONOI = False
 
 if PLOT_P_TREE:
     plt.figure(figsize=(10, 10))
@@ -110,7 +110,7 @@ if PLOT_VORONOI:
 if PLOT_P_INTERP:
     n_count = 100*100
     N = 2
-    interp_coords = np.zeros((n_count, 2))
+    interp_coords = np.zeros((n_count, N))
 
     count = 0
     for i in range(100):

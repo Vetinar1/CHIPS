@@ -592,6 +592,155 @@ def sample(
     return points.drop(["interpolated", "diff"], axis=1)
 
 
+def single_evaluation_step(
+        points,
+        param_space,
+        param_space_margins,
+
+        rad_params=None,
+        rad_params_margins=None,
+        dex_threshold=0.1,
+        fname_data="data.csv",
+        fname_tri="dtri.csv",
+        fname_neighbours="dneighbours.csv",
+        n_partitions=10,
+):
+    """
+    Do a single interpolation step and output results. Save the data (data.csv, dtri.csv, dneighbours.csv).
+    Does not draw new points or run cloudy.
+
+    For debugging.
+
+    :param points:
+    :param fname_data:
+    :param fname_tri:
+    :param fname_neighbours:
+    :param n_partitions:
+    :return:
+    """
+    coordinates = { # TODO Rename to core
+        **param_space,
+        **{k:v[1] for k, v in rad_params.items()}
+    } #list(param_space.keys()) + list(rad_params.keys())
+    margins = {**param_space_margins, **rad_params_margins}
+    coord_list  = list(coordinates.keys())  # guaranteed order
+
+    points["interpolated"] = np.nan
+    points["diff"] = np.nan
+    N = len(coord_list)
+
+    minmax = []
+    for i, coord in enumerate(coord_list):
+        minmax.append([points.loc[:,coord].min(), points.loc[:,coord].max()])
+
+    corners = pd.DataFrame(columns=points.columns)
+    for coords in itertools.product(*minmax):
+        corners = pd.concat(
+            (
+                corners,
+                points.loc[
+                    np.all(
+                        [points[col] == coords[i] for i, col in enumerate(coord_list)], axis=0
+                    )
+                ]
+            )
+        )
+        # df.loc[np.all([df[col] == df.iloc[:, 0] for col in df], axis=0)]
+
+    for partition in range(n_partitions):
+        assert (not points.index.duplicated().any())
+        subset = points.loc[partition::n_partitions].copy(deep=True)
+        bigset = pd.concat((points, subset)).drop_duplicates(keep=False)
+
+        subset.loc[:, "interpolated"] = np.nan
+
+        # Always include corners to ensure convex hull
+        bigset = pd.concat((bigset, corners))
+        bigset = bigset.drop_duplicates()
+
+        # # Need to reset the bigset index due to the concatenation
+        # # Since the bigset index is not relevant again - unlike the subset index - this should be fine
+        bigset = bigset.reset_index()
+        # print(bigset.loc[bigset.index.duplicated(keep=False)])
+        assert (not bigset.index.duplicated().any())
+
+        # dont consider points in margins
+        for c, edges in coordinates.items():
+            subset = subset.loc[(subset[c] > edges[0]) & (subset[c] < edges[1])]
+
+        tri = spatial.Delaunay(bigset[coord_list].to_numpy())
+        simplex_indices = tri.find_simplex(subset[coord_list].to_numpy())
+        simplices = tri.simplices[simplex_indices]
+        transforms = tri.transform[simplex_indices]
+
+        # The following is adapted from
+        # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
+        # 1. barycentric coordinates of points; N-1
+        bary = np.einsum(
+            "ijk,ik->ij",
+            transforms[:, :N, :N],
+            subset[coord_list].to_numpy() - transforms[:, N, :]
+        )
+
+        # 2. Add dependent barycentric coordinate to obtain weights
+        weights = np.c_[bary, 1 - bary.sum(axis=1)]
+
+        # 3. Interpolation
+        for i, index in enumerate(subset.index):
+            subset.loc[index, "interpolated"] = np.inner(
+                bigset.loc[
+                    bigset.index[simplices[i]],
+                    "values"
+                ],
+                weights[i]
+            )
+
+        assert (not subset["interpolated"].isnull().to_numpy().any())
+
+        # 4. Find points over threshold
+        subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
+
+        points.loc[subset.index, "interpolated"] = subset["interpolated"]
+        points.loc[subset.index, "diff"] = subset["diff"]
+
+    # Calculate some stats/diagnostics
+
+    # all points
+    total_count = len(points.index)
+
+    # points not in margins
+    df_copy = points.copy(deep=True)
+    for c, edges in coordinates.items():
+        df_copy = df_copy.loc[(df_copy[c] > edges[0]) & (df_copy[c] < edges[1])]
+    in_bounds_count = len(df_copy.index)
+    del df_copy
+
+    # points in margins
+    outside_bounds_count = total_count - in_bounds_count
+
+    # number and fraction of points over threshold
+    over_thresh_count = len(points[points["diff"] > dex_threshold].index)
+    over_thresh_fraction = over_thresh_count / in_bounds_count
+
+    # biggest difference
+    max_diff = points["diff"].max()
+
+    # print("Number of nans in interpolated: ", points["interpolated"].isnull().sum())
+
+    # diagnostics
+    print("Total points before sampling".ljust(50), total_count)
+    print("Points in core".ljust(50), in_bounds_count)
+    print("Points in margins".ljust(50), outside_bounds_count)
+    print(f"Points in core over threshold ({dex_threshold})".ljust(50), over_thresh_count,
+          f"/ {in_bounds_count} ({round(over_thresh_fraction * 100, 2)}%)")
+    print("Largest interpolation error".ljust(50), max_diff)
+
+    print("Building and saving final Delaunay triangulation...")
+    tri = spatial.Delaunay(points[coord_list].to_numpy())
+    np.savetxt(fname_tri, tri.simplices.astype(int), delimiter=",", fmt="%i")
+    np.savetxt(fname_neighbours, tri.neighbors.astype(int), delimiter=",", fmt="%i")
+    print("Done")
+
 def _get_corners(param_space):
     """
     For a given parameter space, returns a pandas Dataframe containing its corners, with a nan values column.
@@ -676,7 +825,7 @@ def _load_point(filename, filename_pattern, coordinates):
         if coordinate not in list(point.keys()):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
-    point["values"] = float(np.loadtxt(filename, usecols=3))
+    point["values"] = np.log10(float(np.loadtxt(filename, usecols=3)))
 
     return point
 
