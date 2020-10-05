@@ -741,6 +741,8 @@ def single_evaluation_step(
     np.savetxt(fname_neighbours, tri.neighbors.astype(int), delimiter=",", fmt="%i")
     print("Done")
 
+    return points
+
 def _get_corners(param_space):
     """
     For a given parameter space, returns a pandas Dataframe containing its corners, with a nan values column.

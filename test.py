@@ -12,7 +12,7 @@ data = optimizer._load_existing_data(
     ["T", "nH", "hhT6", "SFR"]
 )
 
-optimizer.single_evaluation_step(
+data = optimizer.single_evaluation_step(
     data,
     param_space={
         "T":[2, 8],
