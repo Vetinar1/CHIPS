@@ -1,6 +1,7 @@
 CMB redshift 0
 table HM12 redshift 0
-metals 0
+# log required to avoid "kink"
+metals 0 log
 hden {nH}
 constant temperature {T}
 stop zone 1
