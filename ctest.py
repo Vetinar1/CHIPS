@@ -3,11 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import spatial
 
-points = np.loadtxt("ctest2d/data.csv", delimiter=",")#, skiprows=1)
+points = np.loadtxt("ctest3d/data.csv", delimiter=",")#, skiprows=1)
 # tree = np.loadtxt("ctest/tree", delimiter=" ", usecols=(0, 1, 2)).astype(int)
-ctris = np.loadtxt("ctest2d/dtri.csv", delimiter=",").astype(int)
+ctris = np.loadtxt("ctest3d/dtri.csv", delimiter=",").astype(int)
 # ptree = np.loadtxt("ctest/ptree", delimiter=" ", usecols=(0, 1, 2)).astype(int)
-interp_loaded = np.loadtxt("ctest2d/interp", delimiter=" ")
+interp_loaded = np.loadtxt("ctest3d/interpml", delimiter=" ")
 # tree_radius = np.loadtxt("ctest/tree", delimiter=" ", usecols=3)
 # ptree_radius = np.loadtxt("ctest/ptree", delimiter=" ", usecols=3)
 
@@ -34,7 +34,7 @@ if PLOT_P_INTERP:
         for j in range(100):
             interp_coords[count, 0] =2 + i * (8 - 2) / 100.
             interp_coords[count, 1] = -4 + j * 8 / 100.
-            # interp_coords[count, 2] = -0.17
+            interp_coords[count, 2] = -0.17
             # interp_coords[count, 3] = 20
             count += 1
 
@@ -101,7 +101,7 @@ if PLOT_C_INTERP:
     plt.xlim(1, 9)
     plt.ylim(-5, 5)
     plt.gcf().set_dpi(200)
-    plt.title(r"C interpolation of $\log \Lambda$, $D = " + str(N) + "$")
+    plt.title(r"Multilinear C interpolation of $\log \Lambda$, $D = " + str(N) + "$")
     plt.xlabel(r"Temperature $T$")
     plt.ylabel(r"Hydrogen density $n_H$")
     plt.savefig("cnotri.png", transparent=True)
@@ -117,7 +117,7 @@ if PLOT_DIFF:
     plt.xlim(1, 9)
     plt.ylim(-5, 5)
     plt.gcf().set_dpi(200)
-    plt.title(r"Difference between C and Python interpolation, $D = " + str(N) + "$")
+    plt.title(r"Difference between Python and Multilinear C interpolation, $D = " + str(N) + "$")
     plt.xlabel(r"Temperature $T$")
     plt.ylabel(r"Hydrogen density $n_H$")
     plt.savefig("diffnotri.png", transparent=True)
