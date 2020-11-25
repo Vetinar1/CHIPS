@@ -3,9 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import spatial
 
-points = np.loadtxt("ctest2d/data.csv", delimiter=",")#, skiprows=1)
+points = np.loadtxt("run27_3d/data.csv", delimiter=",")#, skiprows=1)
 # tree = np.loadtxt("ctest/tree", delimiter=" ", usecols=(0, 1, 2)).astype(int)
-ctris = np.loadtxt("ctest2d/dtri.csv", delimiter=",").astype(int)
+ctris = np.loadtxt("run27_3d/dtri.csv", delimiter=",").astype(int)
 # ptree = np.loadtxt("ctest/ptree", delimiter=" ", usecols=(0, 1, 2)).astype(int)
 interp_loaded = np.loadtxt("ctest2d/interp", delimiter=" ")
 # tree_radius = np.loadtxt("ctest/tree", delimiter=" ", usecols=3)

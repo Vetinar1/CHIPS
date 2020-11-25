@@ -4,11 +4,101 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 # from util import sample_simplex, sample_simplices
-# from chips import optimizer
+from chips import optimizer
 from scipy import spatial
 from tqdm import tqdm
 import itertools
 from mpl_toolkits.mplot3d import Axes3D
+from pathlib import Path
+from parse import parse
+
+
+points = np.loadtxt("data.csv", delimiter=",", skiprows=1)
+ctris = np.loadtxt("dtri.csv", delimiter=",").astype(int)
+
+N = points.shape[1] - 1
+print(points.shape)
+tri = spatial.Delaunay(points[:, :-1])
+
+z_min = 0
+z_max = 2.2
+z_splits = 10
+
+pathlist = Path(".").glob("slice_*.slice")
+for c, path in enumerate(pathlist):
+    str_path = str(path)
+    result = parse("slice_{i}_{z_low}_{z_high}.slice", str_path)
+    context = result.named
+    print(context)
+    simplex_indices = np.loadtxt("slice_{i}_{z_low}_{z_high}.slice".format(**context)).astype(int)
+    disc = np.loadtxt("slice_{i}_{z_low}_{z_high}.disc".format(**context)).astype(int)
+
+    tris = ctris[simplex_indices]
+    disctris = ctris[disc]
+
+    centroids = np.zeros((tris.shape[0], N))
+    discc = np.zeros((disctris.shape[0], N))
+
+    for i in range(tris.shape[0]):
+        centroids[i] = np.sum(points[tris[i],:-1], axis=0) / (N+1)
+    for i in range(disctris.shape[0]):
+        discc[i] = np.sum(points[disctris[i],:-1], axis=0) / (N+1)
+
+
+    plt.figure(figsize=(1.2 * 6, 6))
+    plt.triplot(points[:,1], points[:,0], triangles=ctris, linewidth=0.5, color="k")
+    plt.scatter(centroids[:,1], centroids[:,0], color="bg", s=2)
+    plt.scatter(discc[:,1], discc[:,0], color="orange", s=2)
+    plt.title(r"Distribution of samples, $D = " + str(N) + "$, $z = [$" +
+              str(context["z_low"]) + ", " + str(context["z_high"]) + "]$")
+    plt.axvline(float(context["z_low"]), color="r")
+    plt.axvline(float(context["z_high"]), color="r")
+    plt.gcf().set_dpi(200)
+    plt.xlim(-0.2, 2.2)
+    # plt.xlim(-5, 5)
+    plt.ylim(1, 9)
+    plt.xlabel(r"redshift $z$")
+    plt.ylabel(r"Temperature $T$")
+    plt.show()
+
+exit()
+
+
+
+
+data = optimizer._load_existing_data(
+    "run28_2d/",
+    "T_{T}__z_{z}",
+    ["T", "z"]
+)
+
+data = optimizer.single_evaluation_step(
+    data,
+    param_space={
+        "T":[2, 8],
+        #"nH":[-4, 4],
+        "z":[0, 2]
+    },
+    param_space_margins={
+        "T":0.1,
+        #"nH":0.1,
+        "z":[0, 2.2]
+    },
+    rad_params={
+        # "hhT6":("spectra/hhT6", [15, 25]),
+        # "SFR":("spectra/SFR", [15, 25])
+    },
+    rad_params_margins={
+        # "hhT6":0.1,
+        # "SFR":0.1
+    },
+    z_split_partitions=10
+)
+
+data.to_csv("data.csv", index=False)
+exit()
+
+
 
 fig = plt.figure(figsize=(6.4, 6.4))
 points = np.array([
@@ -560,32 +650,3 @@ exit()
 # tri = spatial.Delaunay(data.loc[:, ["T", "nH", "hhT6", "SFR"]].to_numpy())
 # print(tri.find_simplex(np.array([2, -4, 20, 20])))
 # exit()
-
-data = optimizer._load_existing_data(
-    "run15/",
-    "T_{T}__nH_{nH}__hhT6_{hhT6}__SFR_{SFR}",
-    ["T", "nH", "hhT6", "SFR"]
-)
-
-data = optimizer.single_evaluation_step(
-    data,
-    param_space={
-        "T":[2, 8],
-        "nH":[-4, 4]
-    },
-    param_space_margins={
-        "T":0.1,
-        "nH":0.1
-    },
-    rad_params={
-        "hhT6":("spectra/hhT6", [15, 25]),
-        "SFR":("spectra/SFR", [15, 25])
-    },
-    rad_params_margins={
-        "hhT6":0.1,
-        "SFR":0.1
-    },
-
-)
-
-data.to_csv("run15/data.csv", index=False)

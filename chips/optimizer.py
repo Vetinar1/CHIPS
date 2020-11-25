@@ -37,6 +37,7 @@ def sample(
 
         n_jobs=4,
         n_partitions=10,
+        z_split_partitions=10,
 
         max_iterations=20,
         max_storage_gb=10,
@@ -80,6 +81,8 @@ def sample(
     :param random_samples_per_iteration:    How many completely random samples to add each iteration
     :param n_jobs:                          How many cloudy jobs to run in parallel
     :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
+    :param z_split_partitions:              How many partitions to use when slicing along z axis. Only has an
+                                            effect if z is being varied.
     :param max_iterations:                  Exit condition: Quit after this many iterations
     :param max_storage_gb:                  Exit condition: Quit after this much storage space has been used
     :param max_time:                        Exit condition: Quit after this much time.
@@ -333,48 +336,6 @@ def sample(
             # 4. Find points over threshold
             subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
 
-            # # Draw new samples by finding the simplex point that contributed most in the wrong direction,
-            # # i.e. weight * value had the largest difference
-            # # new sample is at halfway point between interpolation point and that simplex point
-            #
-            # # for plotting...
-            # samples = pd.DataFrame(columns=coord_list)
-            # for i, index in enumerate(subset[subset["diff"] > dex_threshold].index):
-            #     simplex = tri.find_simplex(
-            #         subset.loc[
-            #             index,
-            #             coord_list
-            #         ].to_numpy()
-            #     ).flatten()     # indices of simplices
-            #
-            #     simplex = tri.simplices[simplex] # indices of points
-            #     simplex = simplex.flatten()
-            #     simplex = bigset.loc[bigset.index[simplex], :]   # actual points
-            #
-            #
-            #     largest_difference = 0
-            #     largest_difference_pos = None
-            #     w = weights[subset.index.get_loc(index)]
-            #     for j, jndex in enumerate(simplex.index):
-            #         diff = np.abs(subset.loc[index, "values"] - w[j] * simplex.loc[jndex, "values"])
-            #
-            #         if diff > largest_difference:
-            #             largest_difference = diff
-            #             largest_difference_pos = j
-            #
-            #     endpoint = simplex.iloc[largest_difference_pos,:]
-            #
-            #     new_point = {}
-            #     for coord in coord_list:
-            #         new_point[coord] = (float(subset.loc[index, coord]) + float(endpoint[coord])) / 2
-            #
-            #     new_point = pd.DataFrame(new_point, [0])
-            #     new_points = pd.concat((new_points, new_point), ignore_index=True)
-            #     samples = pd.concat((samples, new_point), ignore_index=True)
-
-
-
-
             # Draw new samples by finding geometric centers of the simplices containing the points over threshold
             if not subset[subset["diff"] > dex_threshold].empty:
                 # TODO: Reusing old variables is not clean
@@ -586,7 +547,12 @@ def sample(
     print("Building and saving final Delaunay triangulation...")
     tri = spatial.Delaunay(points[coord_list].to_numpy())
     np.savetxt(os.path.join(output_folder, "dtri.csv"), tri.simplices.astype(int), delimiter=",", fmt="%i")
-    np.savetxt(os.path.join(output_folder, "dneighbours.csv"),     tri.neighbors.astype(int), delimiter=",", fmt="%i")
+    np.savetxt(os.path.join(output_folder, "dneighbours.csv"), tri.neighbors.astype(int), delimiter=",", fmt="%i")
+
+    if "z" in coord_list and z_split_partitions > 1:
+        print("Slicing triangulation along z axis...")
+        max_simplices = _z_splitting(tri, points, z_split_partitions, coordinates, coord_list)
+        print("Maximum number of simplices per slice:", max_simplices)
     print("Done")
 
     return points.drop(["interpolated", "diff"], axis=1)
@@ -604,6 +570,7 @@ def single_evaluation_step(
         fname_tri="dtri.csv",
         fname_neighbours="dneighbours.csv",
         n_partitions=10,
+        z_split_partitions=10
 ):
     """
     Do a single interpolation step and output results. Save the data (data.csv, dtri.csv, dneighbours.csv).
@@ -739,9 +706,15 @@ def single_evaluation_step(
     tri = spatial.Delaunay(points[coord_list].to_numpy())
     np.savetxt(fname_tri, tri.simplices.astype(int), delimiter=",", fmt="%i")
     np.savetxt(fname_neighbours, tri.neighbors.astype(int), delimiter=",", fmt="%i")
+
+    if "z" in coord_list and z_split_partitions > 1:
+        print("Slicing triangulation along z axis...")
+        max_simplices = _z_splitting(tri, points, z_split_partitions, coordinates, coord_list)
+        print("Maximum number of simplices per slice:", max_simplices)
     print("Done")
 
-    return points
+    return points.drop(["interpolated", "diff"], axis=1)
+
 
 def _get_corners(param_space):
     """
@@ -1166,3 +1139,107 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
 
 
     return points
+
+
+def _z_splitting(tri, points, num_partitions : int, coordinates, coord_list):
+    """
+    Given a Delaunay triangulation and a pandas dataframe of points containing a redshift column, split
+    those points into the defined number of equi sized partitions.
+    For each partition the indices of the simplices contained in it are saved.
+    A partition contains an index if there is any overlap between the parameter space volume defined by it and
+    the volume of a simplex. This is equivalent to having at least one vertex inside the partition.
+
+    TODO Option for partitioning based on memory footprint
+
+    :param tri:             scipy.spatial.Delaunay object
+    :param points:          pd.Dataframe
+    :param num_partitions:  integer
+    :param coordinates:     coordinates dict as used in sample()
+    :param coord_list:      coord_list as used in sample()
+    :return:                The maximum number of simplices in any slice
+    """
+    if num_partitions <= 0 or not "z" in list(points.columns):
+        return
+
+    z_min = min(coordinates["z"])
+    z_max = max(coordinates["z"])
+    assert(z_min != z_max)
+    z_diff = (z_max - z_min) / num_partitions
+
+    # Important! This relies on tri being built like
+    # tri = spatial.Delaunay(points[coord_list].to_numpy())
+    z_ind = coord_list.index("z")
+
+    max_simplices = 0
+
+    for i in range(num_partitions):
+        z_low = z_min + i*z_diff
+        z_high = z_low + z_diff
+
+        # Set of indices of simplices overlapping the current block
+        contained = set()
+
+        # Get indices of all points inbetween z_low and z_high
+        point_indices = np.where((tri.points[:,z_ind] >= z_low) & (tri.points[:,z_ind] <= z_high))
+
+        # Get one simplex for each point
+        simplex_indices = tri.vertex_to_simplex[point_indices]
+        contained = set(simplex_indices)
+
+        # Find neighbors of those
+        candidates = list(np.unique(tri.neighbors[simplex_indices].flatten())) # shape n
+        discarded = set()
+
+        while candidates:
+            simplex = candidates.pop()
+            simplex_points = tri.simplices[simplex]
+
+            if simplex in contained or simplex in discarded or simplex == -1:
+                continue
+
+            zs = tri.points[simplex_points, z_ind]
+            ll, inb, hh = False, False, False
+            for z in zs:
+                if z < z_low:
+                    ll = True
+                else:
+                    if z <= z_high:
+                        inb = True
+
+                if z > z_high:
+                    hh = True
+
+            # if np.any(np.where((tri.points[simplex_points,z_ind] >= z_low) &
+            #                    (tri.points[simplex_points,z_ind] <= z_high))):
+            if inb:
+                contained.add(simplex)
+                for neighbor in list(tri.neighbors[simplex].flatten()):
+                    if neighbor not in candidates and neighbor not in discarded and neighbor not in contained:
+                        candidates.append(neighbor)
+                continue
+
+            # if np.any(np.where(tri.points[simplex_points,z_ind] <= z_low)) and \
+            #    np.any(np.where(tri.points[simplex_points,z_ind] >= z_high)):
+            if ll and hh:
+                contained.add(simplex)
+                print(z_low, z_high, "stretch")
+                for neighbor in list(tri.neighbors[simplex].flatten()):
+                    if neighbor not in candidates and neighbor not in discarded and neighbor not in contained:
+                        candidates.append(neighbor)
+                continue
+
+            discarded.add(simplex)
+
+
+        contained = np.array(list(contained)).astype(int)
+        contained.sort()
+        fname = "slice_" + str(i) + "_" + str(z_low) + "_" + str(z_high) + ".slice"
+        np.savetxt(fname, contained, fmt="%i")
+
+        discarded = np.array(list(discarded)).astype(int)
+        fname2 = "slice_" + str(i) + "_" + str(z_low) + "_" + str(z_high) + ".disc"
+        np.savetxt(fname2, discarded, fmt="%i")
+        max_simplices = max(max_simplices, contained.shape[0])
+
+
+    return max_simplices
