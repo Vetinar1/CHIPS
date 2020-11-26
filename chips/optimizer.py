@@ -17,6 +17,7 @@ def sample(
         cloudy_input,
         cloudy_source_path,
         output_folder,
+        output_filename,
         param_space,
         param_space_margins,
 
@@ -37,7 +38,7 @@ def sample(
 
         n_jobs=4,
         n_partitions=10,
-        z_split_partitions=10,
+        z_split_partitions=0,
 
         max_iterations=20,
         max_storage_gb=10,
@@ -58,6 +59,7 @@ def sample(
     :param cloudy_input:                    String. Cloudy input or path to cloudy input file.
     :param cloudy_source_path:              String. Path to cloudy's source/ folder
     :param output_folder:                   Path to output folder. Output folder should be empty/nonexistent.
+    :param output_filename:
     :param param_space:                     "key":(min, max)
                                             key: The variable to fill in in the cloudy file, e.g. z, T, hden, etc
                                                  Must match the string format syntax in the cloudy input string
@@ -546,8 +548,10 @@ def sample(
 
     print("Building and saving final Delaunay triangulation...")
     tri = spatial.Delaunay(points[coord_list].to_numpy())
-    np.savetxt(os.path.join(output_folder, "dtri.csv"), tri.simplices.astype(int), delimiter=",", fmt="%i")
-    np.savetxt(os.path.join(output_folder, "dneighbours.csv"), tri.neighbors.astype(int), delimiter=",", fmt="%i")
+    np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=",", fmt="%i")
+    np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=",", fmt="%i")
+
+    points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     if "z" in coord_list and z_split_partitions > 1:
         print("Slicing triangulation along z axis...")
