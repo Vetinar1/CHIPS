@@ -551,6 +551,7 @@ def sample(
     np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=",", fmt="%i")
     np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=",", fmt="%i")
 
+    points = points.drop(["interpolated", "diff"], axis=1)
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     if "z" in coord_list and z_split_partitions > 1:
@@ -559,7 +560,7 @@ def sample(
         print("Maximum number of simplices per slice:", max_simplices)
     print("Done")
 
-    return points.drop(["interpolated", "diff"], axis=1)
+    return points
 
 
 def single_evaluation_step(

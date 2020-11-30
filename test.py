@@ -12,6 +12,18 @@ from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from parse import parse
 
+maxpoints = 0
+pathlist = Path("run29_3d").glob("*.neighbors")
+for path in pathlist:
+    data = pd.read_csv(str(path))
+    maxpoints = max(maxpoints, len(data.index))
+    # data = data.drop(["diff", "interpolated"], axis=1)
+    data.to_csv("run29_2/z" + str(round(float(path.stem[1:]), 2)) + path.suffix, index=False, header=False)
+    print(path, data.shape[0])
+
+print(maxpoints)
+exit()
+
 
 points = np.loadtxt("data.csv", delimiter=",", skiprows=1)
 ctris = np.loadtxt("dtri.csv", delimiter=",").astype(int)
