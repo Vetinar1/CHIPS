@@ -13,15 +13,34 @@ from pathlib import Path
 from parse import parse
 
 maxpoints = 0
-pathlist = Path("run29_3d").glob("*.neighbors")
+maxtris = 0
+pathlist = Path("run29_3d_compiled").glob("*.points")
 for path in pathlist:
     data = pd.read_csv(str(path))
     maxpoints = max(maxpoints, len(data.index))
-    # data = data.drop(["diff", "interpolated"], axis=1)
-    data.to_csv("run29_2/z" + str(round(float(path.stem[1:]), 2)) + path.suffix, index=False, header=False)
-    print(path, data.shape[0])
+    data = data.drop(["diff", "interpolated"], axis=1)
+    data = data.to_numpy()
+    tri = spatial.Delaunay(data[:,:-1])
+
+    np.savetxt("run29_compiled2/z" + str(round(float(path.stem[1:]), 2)) + path.suffix, data, delimiter=",")
+    np.savetxt("run29_compiled2/z" + str(round(float(path.stem[1:]), 2)) +
+               ".tris", tri.simplices.astype(int), delimiter=",", fmt="%i")
+    np.savetxt("run29_compiled2/z" + str(round(float(path.stem[1:]), 2)) +
+               ".neighbors", tri.neighbors.astype(int), delimiter=",", fmt="%i")
+
+    maxtris = max(maxtris, tri.simplices.shape[0])
+
+
+    # plt.figure(figsize=(1.2*6, 6))
+    # plt.triplot(data[:,0], data[:,1], triangles=tri.simplices, linewidth=0.5, color="r")
+    # plt.scatter(data[:,0], data[:,1], color="k", s=4, zorder=1000)
+    # plt.gcf().set_dpi(200)
+    # plt.xlim(1, 9)
+    # plt.ylim(-5, 5)
+    # plt.show()
 
 print(maxpoints)
+print(maxtris)
 exit()
 
 

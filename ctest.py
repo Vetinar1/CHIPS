@@ -3,18 +3,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import spatial
 
-points = np.loadtxt("ctest3d/data.csv", delimiter=",")#, skiprows=1)
+# points = np.loadtxt("run29_compiled2/z3.9.points", delimiter=",")#, skiprows=1)
 # tree = np.loadtxt("ctest/tree", delimiter=" ", usecols=(0, 1, 2)).astype(int)
-ctris = np.loadtxt("ctest3d/dtri.csv", delimiter=",").astype(int)
+# ctris = np.loadtxt("run29_compiled2/z3.9.tris", delimiter=",").astype(int)
 # ptree = np.loadtxt("ctest/ptree", delimiter=" ", usecols=(0, 1, 2)).astype(int)
-interp_loaded = np.loadtxt("ctest3d/interpml", delimiter=" ")
+# interp_loaded = np.loadtxt("ctest3d/interpml", delimiter=" ")
 # tree_radius = np.loadtxt("ctest/tree", delimiter=" ", usecols=3)
 # ptree_radius = np.loadtxt("ctest/ptree", delimiter=" ", usecols=3)
-
+points = np.loadtxt("run29_compiled2/z3.9.points", delimiter=",")
+ctris = np.loadtxt("run29_compiled2/z3.9.tris", delimiter=",")
 PLOT_S_TREE = False
 PLOT_C_INTERP = True
 PLOT_P_INTERP = True
-PLOT_DIFF = True
+PLOT_DIFF = False
 PLOT_P_TREE = False
 PLOT_VORONOI = False
 PLOT_DIRECT_TRILINEAR_INTERP = False
@@ -34,7 +35,7 @@ if PLOT_P_INTERP:
         for j in range(100):
             interp_coords[count, 0] =2 + i * (8 - 2) / 100.
             interp_coords[count, 1] = -4 + j * 8 / 100.
-            interp_coords[count, 2] = -0.17
+            # interp_coords[count, 2] = -0.17
             # interp_coords[count, 3] = 20
             count += 1
 
@@ -71,9 +72,9 @@ if PLOT_P_INTERP:
         vals = np.clip(vals, CLIP_MIN, CLIP_MAX)
 
     plt.figure(figsize=(1.2*6, 6))
-    # plt.triplot(points[:,0], points[:,1], triangles=tri.simplices, linewidth=0.5, color="r")
-    plt.scatter(interp_coords[:,0], interp_coords[:,1], c=vals, s=2)
-    # plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
+    plt.triplot(points[:,0], points[:,1], triangles=tri.simplices, linewidth=0.5, color="r")
+    # plt.scatter(interp_coords[:,0], interp_coords[:,1], c=vals, s=2)
+    plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
     plt.colorbar()
     plt.clim(vmin=-32, vmax=-13)
     plt.xlim(1, 9)
@@ -89,13 +90,13 @@ if PLOT_P_INTERP:
 
 
 if PLOT_C_INTERP:
-    if CLIP_FOR_COLORBARS:
-        interp_loaded[:,-1] = np.clip(interp_loaded[:,-1], CLIP_MIN, CLIP_MAX)
+    # if CLIP_FOR_COLORBARS:
+    #     interp_loaded[:,-1] = np.clip(interp_loaded[:,-1], CLIP_MIN, CLIP_MAX)
 
     plt.figure(figsize=(1.2*6, 6))
-    # plt.triplot(points[:,0], points[:,1], triangles=ctris, linewidth=0.5, color="r")
-    plt.scatter(interp_loaded[:,0], interp_loaded[:,1], c=interp_loaded[:,2], s=2)
-    # plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
+    plt.triplot(points[:,0], points[:,1], triangles=ctris, linewidth=0.5, color="r")
+    # plt.scatter(interp_loaded[:,0], interp_loaded[:,1], c=interp_loaded[:,2], s=2)
+    plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
     plt.colorbar()
     plt.clim(vmin=-32, vmax=-13)
     plt.xlim(1, 9)
