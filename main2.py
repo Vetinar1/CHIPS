@@ -8,7 +8,7 @@ import os
 cloudy_input = """CMB redshift {z}
 table HM12 redshift {z}
 metals 0 log
-hden 2
+hden {nH}
 constant temperature {T}
 stop zone 1
 iterate to convergence

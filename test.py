@@ -14,7 +14,7 @@ from parse import parse
 
 maxpoints = 0
 maxtris = 0
-pathlist = Path("run29_3d_compiled").glob("*.points")
+pathlist = Path("run29_3d").glob("*.points")
 for path in pathlist:
     data = pd.read_csv(str(path))
     maxpoints = max(maxpoints, len(data.index))
@@ -22,10 +22,10 @@ for path in pathlist:
     data = data.to_numpy()
     tri = spatial.Delaunay(data[:,:-1])
 
-    np.savetxt("run29_compiled2/z" + str(round(float(path.stem[1:]), 2)) + path.suffix, data, delimiter=",")
-    np.savetxt("run29_compiled2/z" + str(round(float(path.stem[1:]), 2)) +
+    np.savetxt("run29_3d_compiled/z" + str(round(float(path.stem[1:]), 2)) + path.suffix, data, delimiter=",")
+    np.savetxt("run29_3d_compiled/z" + str(round(float(path.stem[1:]), 2)) +
                ".tris", tri.simplices.astype(int), delimiter=",", fmt="%i")
-    np.savetxt("run29_compiled2/z" + str(round(float(path.stem[1:]), 2)) +
+    np.savetxt("run29_3d_compiled/z" + str(round(float(path.stem[1:]), 2)) +
                ".neighbors", tri.neighbors.astype(int), delimiter=",", fmt="%i")
 
     maxtris = max(maxtris, tri.simplices.shape[0])
