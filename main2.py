@@ -70,8 +70,8 @@ for i in np.linspace(0, 3, 7):
             "SFR":("spectra/SFR", [-4, 3])
         },
         rad_params_margins={
-            # "hhT6":0.1,
-            # "SFR":0.1
+            "hhT6":0.1,
+            "SFR":0.1
         },
         existing_data=None,
         initial_grid=4,
