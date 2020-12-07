@@ -50,7 +50,7 @@ for i in np.linspace(0, 3, 7):
     sys.stdout = open(out_folder + f"/z{i}.log", "w")
     out = sample(
         cloudy_input=cloudy_input.replace("{z}", str(i)),
-        cloudy_source_path="source",
+        cloudy_source_path="cloudy/source",
         output_folder=out_folder + f"/z{i}",
         output_filename=f"z{i}",
         param_space={
@@ -66,12 +66,14 @@ for i in np.linspace(0, 3, 7):
             #"z":[0, 2.2]
         },
         rad_params={
-            "hhT6":("spectra/hhT6", [17.5, 23.5]),
-            "SFR":("spectra/SFR", [-4, 3])
+            "hhT6":("spectra/hhT6", [17.5, 23.5], "log"),
+            "SFR":("spectra/SFR", [-4, 3], "lin"),
+            "old":("spectra/old", [7, 12], "lin")
         },
         rad_params_margins={
             "hhT6":0.1,
-            "SFR":0.1
+            "SFR":0.1,
+            "old":0.1
         },
         existing_data=None,
         initial_grid=4,

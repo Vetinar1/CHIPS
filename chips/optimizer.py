@@ -59,7 +59,7 @@ def sample(
     :param cloudy_input:                    String. Cloudy input or path to cloudy input file.
     :param cloudy_source_path:              String. Path to cloudy's source/ folder
     :param output_folder:                   Path to output folder. Output folder should be empty/nonexistent.
-    :param output_filename:
+    :param output_filename:                 Base name of the output files (.points, .tris, .neighbors)
     :param param_space:                     "key":(min, max)
                                             key: The variable to fill in in the cloudy file, e.g. z, T, hden, etc
                                                  Must match the string format syntax in the cloudy input string
@@ -138,7 +138,7 @@ def sample(
     # Check if all "slots" in the cloudy template can be filled with the given parameters
     try:
         input_filled = cloudy_input.format_map({**{k : v[0] for k, v in param_space.items()}, **{"fname":""}})
-    except SyntaxError:
+    except (KeyError, SyntaxError):
         print("Error while filling cloudy input: Missing parameter or syntax error")
         exit()
 
@@ -982,15 +982,28 @@ def _get_rad_bg_as_function(rad_params, output_folder):
 
     interpolators = {}
     rad_data = {}
+    rad_bases = {}
 
     # Load radiation data and build interpolators
     for k, v in rad_params.items():
         rad_data[k] = np.loadtxt(v[0])
         interpolators[k] = interpolate.InterpolatedUnivariateSpline(rad_data[k][:,0], rad_data[k][:,1], k=1, ext=1)
 
+        if len(v) < 3:
+            raise RuntimeError(f"Missing arguments in rad param: {v}")
+        if v[2] == "log":
+            rad_bases[k] = 10
+            print(f"Interpreting {k} as LOG")
+        elif v[2] == "lin":
+            rad_bases[k] = 1
+            print(f"Interpreting {k} as LIN")
+        else:
+            raise RuntimeError(f"Invalid rad param argument {v[2]} in {v}")
+
+
     valid_keys = list(rad_params.keys())
 
-    combined_energies = np.sort(np.concatenate([rad_data[k] for k in rad_params.keys()]).flatten())
+    combined_energies = np.sort(np.concatenate([rad_data[k][:,0] for k in rad_params.keys()]).flatten())
     # Cloudy only considers energies between 3.04e-9 Ryd and 7.453e6 Ryd, see Hazy p. 33
     combined_energies = np.clip(combined_energies, 3.04e-9, 7.354e6)
     x = np.geomspace(min(combined_energies), max(combined_energies), 3900)
@@ -998,9 +1011,8 @@ def _get_rad_bg_as_function(rad_params, output_folder):
     def rad_bg_function(rad_multipliers):
         # TODO: Verify function behaves as expected (plots!)
         # Note: Cloudy can only handle 4000 lines of input at a time...
-        # f_nu = sum([interpolators[k](combined_energies) * rad_multipliers[k] for k in rad_multipliers.keys() if k in valid_keys])
         # TODO: Make sure this works with logspace, or find better solution altogether
-        f_nu = sum([interpolators[k](x) * rad_multipliers[k] for k in rad_multipliers.keys() if k in valid_keys])
+        f_nu = sum([interpolators[k](x) * pow(rad_bases[k], rad_multipliers[k]) for k in rad_multipliers.keys() if k in valid_keys])
 
         hstack_shape = (f_nu.shape[0], 1)
         spectrum = np.hstack(
@@ -1014,7 +1026,6 @@ def _get_rad_bg_as_function(rad_params, output_folder):
         spectrum = spectrum[(spectrum[:,0] != 0) & (spectrum[:,1] != 0)]
 
         # Cloudy wants the log of the frequency
-        # TODO Check factor 4pi
         spectrum[:,0] = np.log10(spectrum[:,0])
 
         # Note: We save files in the format "f(x) x",
@@ -1072,9 +1083,10 @@ def _f_nu_to_string(f_nu):
 
     # find the entry closest to 1 Ryd for cloudy normalization
     mindex = np.argmin(np.abs(f_nu[:,0] - 1))   # min index
-    out = f"f(nu) = {f_nu[mindex,0]} at {f_nu[mindex,1]}\ninterpolate ({f_nu[1,1]}  {f_nu[1,0]})\n"
+    out = f"f(nu) = {f_nu[mindex,0]} at {f_nu[mindex,1]}\ninterpolate ({f_nu[0,1]}  {f_nu[0,0]})\n"
 
-    for i in range(2, f_nu.shape[0]):
+    for i in range(1, f_nu.shape[0]):
+        # energy (ryd) - fnu
         out += f"continue ({f_nu[i,1]}  {f_nu[i,0]})\n"
 
     out += "iterate to convergence"
@@ -1145,106 +1157,3 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
 
     return points
 
-
-def _z_splitting(tri, points, num_partitions : int, coordinates, coord_list):
-    """
-    Given a Delaunay triangulation and a pandas dataframe of points containing a redshift column, split
-    those points into the defined number of equi sized partitions.
-    For each partition the indices of the simplices contained in it are saved.
-    A partition contains an index if there is any overlap between the parameter space volume defined by it and
-    the volume of a simplex. This is equivalent to having at least one vertex inside the partition.
-
-    TODO Option for partitioning based on memory footprint
-
-    :param tri:             scipy.spatial.Delaunay object
-    :param points:          pd.Dataframe
-    :param num_partitions:  integer
-    :param coordinates:     coordinates dict as used in sample()
-    :param coord_list:      coord_list as used in sample()
-    :return:                The maximum number of simplices in any slice
-    """
-    if num_partitions <= 0 or not "z" in list(points.columns):
-        return
-
-    z_min = min(coordinates["z"])
-    z_max = max(coordinates["z"])
-    assert(z_min != z_max)
-    z_diff = (z_max - z_min) / num_partitions
-
-    # Important! This relies on tri being built like
-    # tri = spatial.Delaunay(points[coord_list].to_numpy())
-    z_ind = coord_list.index("z")
-
-    max_simplices = 0
-
-    for i in range(num_partitions):
-        z_low = z_min + i*z_diff
-        z_high = z_low + z_diff
-
-        # Set of indices of simplices overlapping the current block
-        contained = set()
-
-        # Get indices of all points inbetween z_low and z_high
-        point_indices = np.where((tri.points[:,z_ind] >= z_low) & (tri.points[:,z_ind] <= z_high))
-
-        # Get one simplex for each point
-        simplex_indices = tri.vertex_to_simplex[point_indices]
-        contained = set(simplex_indices)
-
-        # Find neighbors of those
-        candidates = list(np.unique(tri.neighbors[simplex_indices].flatten())) # shape n
-        discarded = set()
-
-        while candidates:
-            simplex = candidates.pop()
-            simplex_points = tri.simplices[simplex]
-
-            if simplex in contained or simplex in discarded or simplex == -1:
-                continue
-
-            zs = tri.points[simplex_points, z_ind]
-            ll, inb, hh = False, False, False
-            for z in zs:
-                if z < z_low:
-                    ll = True
-                else:
-                    if z <= z_high:
-                        inb = True
-
-                if z > z_high:
-                    hh = True
-
-            # if np.any(np.where((tri.points[simplex_points,z_ind] >= z_low) &
-            #                    (tri.points[simplex_points,z_ind] <= z_high))):
-            if inb:
-                contained.add(simplex)
-                for neighbor in list(tri.neighbors[simplex].flatten()):
-                    if neighbor not in candidates and neighbor not in discarded and neighbor not in contained:
-                        candidates.append(neighbor)
-                continue
-
-            # if np.any(np.where(tri.points[simplex_points,z_ind] <= z_low)) and \
-            #    np.any(np.where(tri.points[simplex_points,z_ind] >= z_high)):
-            if ll and hh:
-                contained.add(simplex)
-                print(z_low, z_high, "stretch")
-                for neighbor in list(tri.neighbors[simplex].flatten()):
-                    if neighbor not in candidates and neighbor not in discarded and neighbor not in contained:
-                        candidates.append(neighbor)
-                continue
-
-            discarded.add(simplex)
-
-
-        contained = np.array(list(contained)).astype(int)
-        contained.sort()
-        fname = "slice_" + str(i) + "_" + str(z_low) + "_" + str(z_high) + ".slice"
-        np.savetxt(fname, contained, fmt="%i")
-
-        discarded = np.array(list(discarded)).astype(int)
-        fname2 = "slice_" + str(i) + "_" + str(z_low) + "_" + str(z_high) + ".disc"
-        np.savetxt(fname2, discarded, fmt="%i")
-        max_simplices = max(max_simplices, contained.shape[0])
-
-
-    return max_simplices
