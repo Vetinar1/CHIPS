@@ -57,10 +57,17 @@ def sfr_spectrum(Phins=1, HMXB=False):
     log10fnu_at1Ryd = np.log10(fnu[j])
     x_at1Ryd = energy[j]
 
+    data = np.hstack(
+        (
+            np.reshape(energy, (energy.shape[0], 1)),
+            np.reshape(fnu, (fnu.shape[0], 1))
+        )
+    )
+    data = data[data[:,0].argsort()]
     with open("../spectra/SFR", "w") as f:
         f.write("# E(Ryd) fnu(erg/s/Hz/cm^2)\n")
-        for i in range(energy.shape[0]):
-            f.write(f"{energy[i]} {fnu[i]}\n")
+        for i in range(data.shape[0]):
+            f.write(f"{data[i,0]} {data[i,1]}\n")
 
     return x_at1Ryd, log10fnu_at1Ryd, energy, fnu
 
@@ -76,15 +83,20 @@ def postAGB_spectrum(Phios=1, LMXB=False):
     log10fnu_at1Ryd = np.log10(fnu_pagb[j])
     x_at1Ryd = energy_pagb[j]
 
+    data = np.hstack(
+        (
+            np.reshape(energy_pagb, (energy_pagb.shape[0], 1)),
+            np.reshape(fnu_pagb, (fnu_pagb.shape[0], 1))
+        )
+    )
+    data = data[data[:,0].argsort()]
     with open("../spectra/old", "w") as f:
         f.write("# E(Ryd) fnu(erg/s/Hz/cm^2)\n")
         for i in range(energy_pagb.shape[0]):
-            f.write(f"{energy_pagb[i]} {fnu_pagb[i]}\n")
+            f.write(f"{data[i,0]} {data[i,1]}\n")
 
     return x_at1Ryd, log10fnu_at1Ryd, energy_pagb, fnu_pagb
 
-sfr_spectrum(1)
-exit()
 
 def hothaloT6_spectrum(PhiT6=0):
     file_in = path_to_lpf_spectra + 'hh6.dat'
@@ -93,10 +105,17 @@ def hothaloT6_spectrum(PhiT6=0):
     sed_hothalo = (np.array(data[:, 1], dtype=float)).flatten()  # 4*pi*J_nu/h = photons/s/cm^2
     fnu_hothalo = hPlanck * (10. ** PhiT6) * sed_hothalo
 
+    data = np.hstack(
+        (
+            np.reshape(energy_hothalo, (energy_hothalo.shape[0], 1)),
+            np.reshape(fnu_hothalo, (fnu_hothalo.shape[0], 1))
+        )
+    )
+    data = data[data[:,0].argsort()]
     with open("../spectra/hhT6", "w") as f:
         f.write("# E(Ryd) fnu(erg/s/Hz/cm^2)\n")
-        for i in range(energy_hothalo.shape[0]):
-            f.write(f"{energy_hothalo[i]} {fnu_hothalo[i]}\n")
+        for i in range(data.shape[0]):
+            f.write(f"{data[i,0]} {data[i,1]}\n")
 
     return energy_hothalo, fnu_hothalo
 
@@ -108,10 +127,17 @@ def hothaloT7_spectrum(PhiT7=0):
     sed_hothalo = (np.array(data[:, 1], dtype=float)).flatten()  # 4*pi*J_nu/h = photons/s/cm^2
     fnu_hothalo = hPlanck * (10. ** PhiT7) * sed_hothalo
 
+    data = np.hstack(
+        (
+            np.reshape(energy_hothalo, (energy_hothalo.shape[0], 1)),
+            np.reshape(fnu_hothalo, (fnu_hothalo.shape[0], 1))
+        )
+    )
+    data = data[data[:,0].argsort()]
     with open("../spectra/hhT7", "w") as f:
         f.write("# E(Ryd) fnu(erg/s/Hz/cm^2)\n")
-        for i in range(energy_hothalo.shape[0]):
-            f.write(f"{energy_hothalo[i]} {fnu_hothalo[i]}\n")
+        for i in range(data.shape[0]):
+            f.write(f"{data[i,0]} {data[i,1]}\n")
 
     return energy_hothalo, fnu_hothalo
 
@@ -123,10 +149,17 @@ def hothaloT8_spectrum(PhiT8=0):
     sed_hothalo = (np.array(data[:, 1], dtype=float)).flatten()  # 4*pi*J_nu/h = photons/s/cm^2
     fnu_hothalo = hPlanck * (10. ** PhiT8) * sed_hothalo
 
+    data = np.hstack(
+        (
+            np.reshape(energy_hothalo, (energy_hothalo.shape[0], 1)),
+            np.reshape(fnu_hothalo, (fnu_hothalo.shape[0], 1))
+        )
+    )
+    data = data[data[:,0].argsort()]
     with open("../spectra/hhT8", "w") as f:
         f.write("# E(Ryd) fnu(erg/s/Hz/cm^2)\n")
-        for i in range(energy_hothalo.shape[0]):
-            f.write(f"{energy_hothalo[i]} {fnu_hothalo[i]}\n")
+        for i in range(data.shape[0]):
+            f.write(f"{data[i,0]} {data[i,1]}\n")
 
     return energy_hothalo, fnu_hothalo
 
