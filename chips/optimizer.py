@@ -1137,10 +1137,23 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     # TODO: Implement reading and moving files to output folder. Cloudy file saving needs to be solved first.
     # Step 4: Read cooling data
     # for now only Ctot
+    missing_values = False
     for i, index in enumerate(points.loc[points["values"].isnull()].index):
-        points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=3))
+        try:
+            points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=3))
+        except:
+            print("Could not read file:", filenames[i] + ".cool")
+            points.loc[index, "values"] = None
+            missing_values = True
 
         os.system(f"mv {filenames[i]}* {output_folder}")
+
+    if missing_values:
+        before = len(points.index)
+        points = points.dropna(axis=0, subset="values")
+        after = len(points.index)
+        print(f"Dropped {after - before} rows due to issues with reading cloudy files.")
+        points = points.reset_index(drop=True)
 
 
     # Step 5: Move files to output folder

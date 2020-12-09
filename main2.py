@@ -84,7 +84,7 @@ for i in np.linspace(0, 3, 7):
         over_thresh_max_fraction=0.2,
         dex_max_allowed_diff=3,
         random_samples_per_iteration=500,
-        n_jobs=50,
+        n_jobs=40,
         n_partitions=10,
         max_iterations=50,
         max_storage_gb=20,
