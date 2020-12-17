@@ -11,6 +11,9 @@ from matplotlib import patches
 
 sns.set()
 
+# 3 = cooling, 2 = heating
+COLUMN_INDEX = 2
+
 # TODO: Options for cloudy to clean up after itself
 # TODO: Check existence of radiation files
 def sample(
@@ -1140,7 +1143,7 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     missing_values = False
     for i, index in enumerate(points.loc[points["values"].isnull()].index):
         try:
-            points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=3))
+            points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=COLUMN_INDEX))
         except:
             print("Could not read file:", filenames[i] + ".cool")
             points.loc[index, "values"] = None
@@ -1150,7 +1153,7 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
 
     if missing_values:
         before = len(points.index)
-        points = points.dropna(axis=0, subset="values")
+        points = points.dropna(axis=0, subset=["values"])
         after = len(points.index)
         print(f"Dropped {after - before} rows due to issues with reading cloudy files.")
         points = points.reset_index(drop=True)
