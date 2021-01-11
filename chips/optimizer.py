@@ -30,6 +30,7 @@ def sample(
         existing_data=None, # TODO: Rename
         initial_grid=10,
         perturbation_scale=None,
+        significant_digits=3, # Set None for no rounding
 
         filename_pattern=None,
 
@@ -41,7 +42,6 @@ def sample(
 
         n_jobs=4,
         n_partitions=10,
-        z_split_partitions=0,
 
         max_iterations=20,
         max_storage_gb=10,
@@ -224,6 +224,8 @@ def sample(
     if initial_grid:
         print("Setting up grid")
         grid_points = _set_up_amorphous_grid(initial_grid, coordinates, margins, perturbation_scale)
+        if significant_digits is not None:
+            grid_points = grid_points.round(significant_digits)
         points = pd.concat((points, grid_points))
 
     # The "corners" of the parameter space will work as convex hull, ensuring that all other points are contained
@@ -234,15 +236,20 @@ def sample(
             margins,
         )
     )
+    if significant_digits is not None:
+        corners = corners.round(significant_digits)
 
     it0folder = os.path.join(output_folder, "iteration0/")
     if not os.path.exists(it0folder):
         os.mkdir(it0folder)
 
+    # Corners are evaluated separately because they are used on their own later
     corners = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, corners, rad_bg, n_jobs)
     points = pd.concat((points, corners), ignore_index=True)
+
     points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
     assert(not points.index.duplicated().any())
+
     points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, points, rad_bg, n_jobs)
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial setup")
@@ -265,15 +272,9 @@ def sample(
         # reset index just to be on the safe side while partitioning later
         points = points.reset_index(drop=True)
         iteration += 1
-        print("{:*^50}".format("Iteration {}".format(iteration)))
+        print("{:*^50}".format(f"Iteration {iteration}"))
 
-        len_pre_drop =  len(points.index)
-        points = points.drop_duplicates(ignore_index=True)
-        len_post_drop = len(points.index)
-        n_dropped = len_pre_drop - len_post_drop
-
-        if len_pre_drop > len_post_drop:
-            print(f"Dropped {n_dropped} duplicate samples")
+        drop_duplicates_and_print(points)
 
         # For plotting the triangulation TODO
         if debug_plot_2d:
@@ -298,11 +299,10 @@ def sample(
             bigset = bigset.drop_duplicates()
             # bigset = bigset.sort_index()
 
-            # # Need to reset the bigset index due to the concatenation
-            # # Since the bigset index is not relevant again - unlike the subset index - this should be fine
+            # Need to reset the bigset index due to the concatenation
+            # Since the bigset index is not relevant again - unlike the subset index - this should be fine
             bigset = bigset.reset_index()
-            # print(bigset.loc[bigset.index.duplicated(keep=False)])
-            assert(not bigset.index.duplicated().any())
+            # assert(not bigset.index.duplicated().any())
 
             # dont consider points in margins
             for c, edges in coordinates.items():
@@ -523,6 +523,8 @@ def sample(
 
         points = points.drop(["interpolated", "diff"], axis=1)
         new_points["values"] = np.nan
+        if significant_digits is not None:
+            new_points = new_points.round(significant_digits)
         points = pd.concat((points, new_points)).drop_duplicates().reset_index(drop=True)
 
         time3 = time.time()
@@ -557,10 +559,6 @@ def sample(
     points = points.drop(["interpolated", "diff"], axis=1)
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
-    if "z" in coord_list and z_split_partitions > 1:
-        print("Slicing triangulation along z axis...")
-        max_simplices = _z_splitting(tri, points, z_split_partitions, coordinates, coord_list)
-        print("Maximum number of simplices per slice:", max_simplices)
     print("Done")
 
     return points
@@ -578,7 +576,6 @@ def single_evaluation_step(
         fname_tri="dtri.csv",
         fname_neighbours="dneighbours.csv",
         n_partitions=10,
-        z_split_partitions=10
 ):
     """
     Do a single interpolation step and output results. Save the data (data.csv, dtri.csv, dneighbours.csv).
@@ -715,10 +712,6 @@ def single_evaluation_step(
     np.savetxt(fname_tri, tri.simplices.astype(int), delimiter=",", fmt="%i")
     np.savetxt(fname_neighbours, tri.neighbors.astype(int), delimiter=",", fmt="%i")
 
-    if "z" in coord_list and z_split_partitions > 1:
-        print("Slicing triangulation along z axis...")
-        max_simplices = _z_splitting(tri, points, z_split_partitions, coordinates, coord_list)
-        print("Maximum number of simplices per slice:", max_simplices)
     print("Done")
 
     return points.drop(["interpolated", "diff"], axis=1)

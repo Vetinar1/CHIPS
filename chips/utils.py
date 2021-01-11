@@ -222,6 +222,23 @@ def poisson_disc_sampling(space, r, k=30):
 
     return out
 
+
+def drop_duplicates_and_print(points):
+    """
+    Drops duplicates from dataframe in place and prints to stdout if any were dropped.
+
+    :param points:
+    :return:
+    """
+    len_pre_drop =  len(points.index)
+    points = points.drop_duplicates(ignore_index=True)
+    len_post_drop = len(points.index)
+    n_dropped = len_pre_drop - len_post_drop
+
+    if len_pre_drop > len_post_drop:
+        print(f"Dropped {n_dropped} duplicate samples")
+
+
 if __name__ == "__main__":
     points = poisson_disc_sampling(
         np.array([[0, 1]] * 5),
