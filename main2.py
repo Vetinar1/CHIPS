@@ -8,7 +8,7 @@ import os
 cloudy_input = """CMB redshift {z}
 table HM12 redshift {z}
 metals 0 log
-hden {nH}
+hden 0
 constant temperature {T}
 stop zone 1
 iterate to convergence
@@ -42,12 +42,12 @@ Si 4 1393.75A
 Si 4 1402.77A
 end of line"""
 
-out_folder = "run31_gasoline_z0-3"
-os.mkdir("run31_gasoline_z0-3")
-sys.stderr = open(out_folder + "/errlog", "w")
+out_folder = "testrun"
+os.mkdir(out_folder)
+# sys.stderr = open(out_folder + "/errlog", "w")
 
-for i in np.linspace(0, 3, 7):
-    sys.stdout = open(out_folder + f"/z{i}.log", "w")
+for i in np.linspace(0, 3, 1):
+    # sys.stdout = open(out_folder + f"/z{i}.log", "w")
     out = sample(
         cloudy_input=cloudy_input.replace("{z}", str(i)),
         cloudy_source_path="cloudy/source",
@@ -55,40 +55,42 @@ for i in np.linspace(0, 3, 7):
         output_filename=f"z{i}",
         param_space={
             "T":[2, 9],
-            "nH":[-9, 4],
+            # "nH":[-9, 4],
             #"Z":[-2, 0],
             #"z":[0, 2]
         },
         param_space_margins={
             "T":0.1,
-            "nH":0.1,
+            # "nH":0.1,
             #"Z":0.1,
             #"z":[0, 2.2]
         },
         rad_params={
             "hhT6":("spectra/hhT6", [17.5, 23.5], "log"),
-            "SFR":("spectra/SFR", [-4, 3], "lin"),
-            "old":("spectra/old", [7, 12], "lin")
+            "hhT7":("spectra/hhT7", [17.5, 23.5], "log")
+            # "SFR":("spectra/SFR", [-4, 3], "lin"),
+            # "old":("spectra/old", [7, 12], "lin")
         },
         rad_params_margins={
             "hhT6":0.1,
-            "SFR":0.1,
-            "old":0.1
+            "hhT7":0.1,
+            # "SFR":0.1,
+            # "old":0.1
         },
         existing_data=None,
         initial_grid=4,
-        perturbation_scale=1,
+        perturbation_scale=0.25,
         filename_pattern=None,
 
-        dex_threshold=1,
+        dex_threshold=0.1,
         over_thresh_max_fraction=0.2,
         dex_max_allowed_diff=3,
-        random_samples_per_iteration=500,
-        n_jobs=40,
+        random_samples_per_iteration=100,
+        n_jobs=10,
         n_partitions=10,
-        max_iterations=50,
+        max_iterations=10,
         max_storage_gb=20,
-        max_time=8*3600,
+        max_time=0.1*3600,
         plot_iterations=True,
 
         debug_plot_2d=False

@@ -12,7 +12,7 @@ from matplotlib import patches
 sns.set()
 
 # 3 = cooling, 2 = heating
-COLUMN_INDEX = 2
+COLUMN_INDEX = 3
 
 # TODO: Options for cloudy to clean up after itself
 # TODO: Check existence of radiation files
@@ -910,8 +910,8 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_s
 
     # Fill the middle using Poisson disc sampling
     # Generate nd unit cube filled with samples
-    if not perturbation_scale:
-        perturbation_scale = 0.1
+    # if not perturbation_scale:
+    #     perturbation_scale = 0.1
     core = poisson_disc_sampling(
         np.array([[0, 1]] * len(list(parameter_space.keys()))),
         perturbation_scale
@@ -1078,7 +1078,7 @@ def _f_nu_to_string(f_nu):
         return ""
 
     # find the entry closest to 1 Ryd for cloudy normalization
-    mindex = np.argmin(np.abs(f_nu[:,0] - 1))   # min index
+    mindex = np.argmin(np.abs(f_nu[:,1] - 1))   # min index
     out = f"f(nu) = {f_nu[mindex,0]} at {f_nu[mindex,1]}\ninterpolate ({f_nu[0,1]}  {f_nu[0,0]})\n"
 
     for i in range(1, f_nu.shape[0]):

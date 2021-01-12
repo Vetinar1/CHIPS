@@ -124,9 +124,6 @@ def sample_simplex(simplex):
     return point
 
 
-
-
-
 def sample_simplices(simplices):
     """
     Function to draw uniform samples in multiple simplices. For each given simplex one sample will be drawn.
