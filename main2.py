@@ -68,8 +68,8 @@ for i in np.linspace(0, 3, 1):
         rad_params={
             "hhT6":("spectra/hhT6", [17.5, 23.5], "log"),
             "hhT7":("spectra/hhT7", [17.5, 23.5], "log")
-            # "SFR":("spectra/SFR", [-4, 3], "lin"),
-            # "old":("spectra/old", [7, 12], "lin")
+            # "SFR":("spectra/SFR", [-4, 3], "log"),
+            # "old":("spectra/old", [7, 12], "log")
         },
         rad_params_margins={
             "hhT6":0.1,

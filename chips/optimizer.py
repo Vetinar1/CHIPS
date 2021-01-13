@@ -797,6 +797,7 @@ def _load_point(filename, filename_pattern, coordinates):
     result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
     point = result.named
 
+    # TODO Currently implicitly iterates over keys, change to coord_list...
     for coordinate in coordinates:
         if coordinate not in list(point.keys()):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
@@ -1049,13 +1050,14 @@ def _get_rad_bg_as_function(rad_params, output_folder):
               "tab:brown", "tab:pink", "tab:gray", "tab:olive", "tab:cyan"]
             # if you run out of these colors you probably have other, more important issues
     c = 0
+    plt.figure(figsize=(10, 10))
     for k, v in rad_params.items():
-        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * v[1][0], ".-", color=colors[c])
-        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * (v[1][1] + v[1][0]) / 2, color=colors[c], label=k)
-        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * v[1][1], "--", color=colors[c])
+        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * pow(rad_bases[k], v[1][0]), ":", color=colors[c])
+        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * pow(rad_bases[k], (v[1][1] + v[1][0]) / 2), color=colors[c], label=k)
+        plt.plot(rad_data[k][:,0], rad_data[k][:,1] * pow(rad_bases[k], v[1][1]), "--", color=colors[c])
         c += 1
 
-    plt.title("Radiation background components")
+    plt.title("Radiation background components (min, avg, max)")
     plt.legend()
     plt.xscale("log")
     plt.yscale("log")

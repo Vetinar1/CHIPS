@@ -418,7 +418,7 @@ def combine_6spectra(zin, Phins, Phios, PhiT6, PhiT7, PhiT8, base_name='cloudy_i
 #############################################################################################################
 
 # example of combined UVB+LPF spectrum together with the corresponding Cloudy input
-combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, 22.5, base_name='rad')
+# combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, 22.5, base_name='rad')
 
 # for i in [-3, -2, -1]:
 #     combine_6spectra(0., 10**i, 5.0e8, 18.5, 19.5, 21.5, base_name='cloudy_inputs/10_rad_test'+str(i))
@@ -438,7 +438,7 @@ combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, 22.5, base_name='rad')
 #for x in [15, 22]: #np.linspace(18, 23, 5):
 #    combine_6spectra(0., 2.0e-2, 5.0e8, 18.5, 19.5, x, base_name='cloudy_inputs/03_fine')
 
-# make_fig1_in_obreja2019()
+make_fig1_in_obreja2019()
 
 
 # loop to get out the combined spectra used by Kannan et al. 2016 (for z=0 only)
