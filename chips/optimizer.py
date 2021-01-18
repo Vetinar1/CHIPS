@@ -802,9 +802,12 @@ def _load_point(filename, filename_pattern, coordinates):
         if coordinate not in list(point.keys()):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
-    point["values"] = np.log10(float(np.loadtxt(filename, usecols=3)))
-
-    return point
+    try:
+        point["values"] = np.log10(float(np.loadtxt(filename, usecols=3)))
+        return point
+    except:
+        print("Could not read point from file", filename)
+        return None
 
 
 def _load_existing_data(folder, filename_pattern, coordinates):
@@ -825,7 +828,9 @@ def _load_existing_data(folder, filename_pattern, coordinates):
 
     for filename in filenames:
         if filename.endswith(".cool"):
-            points.append(_load_point(filename, filename_pattern, coordinates))
+            point = _load_point(filename, filename_pattern, coordinates)
+            if point:
+                points.append(point)
 
     points = pd.DataFrame(points).astype(float)
     return points
