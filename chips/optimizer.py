@@ -46,6 +46,7 @@ def sample(
         max_iterations=20,
         max_storage_gb=10,
         max_time=20,
+        max_samples=100000,
 
         plot_iterations=True,
         debug_plot_2d=False
@@ -176,6 +177,7 @@ def sample(
     print("Maximum number of iterations".ljust(50) + str(max_iterations))
     print("Maximum amount of storage (GB) ".ljust(50) + str(max_storage_gb))
     print("Maximum runtime ".ljust(50) + str(seconds_to_human_readable(max_time)))
+    print("Maximum number of samples".ljust(50) + str(max_samples))
     print()
     print("Maximum number of parallel jobs ".ljust(50) + str(n_jobs))
     print("Plot parameter space ".ljust(50) + str(plot_iterations))
@@ -493,7 +495,11 @@ def sample(
         if max_time is not None and max_time < (time.time() - timeBeginLoop) + iteration_time:
             print(f"Reached maximum calculation time ({seconds_to_human_readable(time.time() - timeBeginLoop)} " +
                   f"/ {seconds_to_human_readable(max_time)}), accounting for length of previous iteration " +
-                  f"({seconds_to_human_readable(iteration_time)}). Quitting")
+                  f"({seconds_to_human_readable(iteration_time)}). Quitting.")
+            break
+
+        if max_samples and total_count + len(new_points.index) > max_samples:
+            print(f"Reached maximum number of samples ({total_count} + {len(new_points.index)} / {max_samples}). Quitting.")
             break
 
 
