@@ -9,17 +9,14 @@ import time
 from parse import parse
 from matplotlib import patches
 
-# TODO Feature for reading existing data from CSV
 # TODO General cleanup, documentation
-# TODO Custom delimiters
+# TODO Function for interpolating with delaunay, standalone
 
 sns.set()
 
 # 3 = cooling, 2 = heating
 COLUMN_INDEX = 3
 
-# TODO: Options for cloudy to clean up after itself
-# TODO: Check existence of radiation files
 def sample(
         cloudy_input,
         cloudy_source_path,
@@ -52,7 +49,10 @@ def sample(
         max_time=20,
         max_samples=100000,
 
+        sep=",",
+
         plot_iterations=True,
+        cleanup=None,
         debug_plot_2d=False
 ):
     """
@@ -78,13 +78,15 @@ def sample(
     :param rad_params:                      "key":(min, max).
                                             key: path to radiation input file; must contain data in format f(x) x
     :param rad_params_margins:              2 values: absolute. 1 value: relative
-    :param rad_params_names:                TODO optional prettier names
     :param existing_data:                   Iterable of strings. Either filenames or foldernames.
                                             If filename: File is loaded as .csv file as output by previous runs.
                                             If foldername: All cloudy output files in folder and subfolders will
                                             be read in. Note filename pattern.
     :param initial_grid:                    How many samples in each dimension in initial grid. 0 to disable
                                             Used for outer hull if amorphous grid is used
+    :param significant_digits:              How many decimals to round coordinates to (before evaluation). Use to
+                                            avoid e.g. long filenames due to floating point errors. Beware of using
+                                            too low a value; becomes essentially a grid. Recommended 3-6.
     :param dex_threshold:                   How close an interpolation has to be to the real value to be considered
                                             acceptable. Absolute value, in dex
     :param over_thresh_max_fraction:        Fraction of interpolations that may be over dex_threshold for interpolation
@@ -93,12 +95,17 @@ def sample(
     :param random_samples_per_iteration:    How many completely random samples to add each iteration
     :param n_jobs:                          How many cloudy jobs to run in parallel
     :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
-    :param z_split_partitions:              How many partitions to use when slicing along z axis. Only has an
-                                            effect if z is being varied.
     :param max_iterations:                  Exit condition: Quit after this many iterations
     :param max_storage_gb:                  Exit condition: Quit after this much storage space has been used
     :param max_time:                        Exit condition: Quit after this much time.
+    :param max_samples:                     Exit condition: Quit after this many samples.
     :param plot_iterations:                 Whether to save plots of the parameter space each iteration.
+    :param cleanup:                         Whether to clean up the working directory after each iteration.
+                                            None: Do not perform cleanup.
+                                            "outfiles": Delete all cloudy output files (which take up the bulk of disk
+                                            space)
+                                            "full": Clean entire working directory. (Not recommended)
+    :param sep:                             Separator/Delimiter to use in .csv files.
     :return:
     """
     ####################################################################################################################
@@ -109,17 +116,14 @@ def sample(
     cloudy_source_path = os.path.expanduser(cloudy_source_path)
     output_folder = os.path.expanduser(output_folder)
     if existing_data is not None:
-        existing_data = os.path.expanduser(existing_data)
+        for i in range(len(existing_data)):
+            existing_data[i] = os.path.expanduser(existing_data[i])
 
 
     # Set up Output folder
     if not os.path.isdir(output_folder):
         os.mkdir(output_folder)
     elif len(os.listdir(output_folder)) != 0:
-        # choice = input("Chosen output folder is not empty. Proceed? (y/n)")
-        # if choice not in ["y", "Y", "yes", "Yes"]:
-        #     print("Aborting...")
-        #     exit()
         raise RuntimeWarning(f"Chosen Output {output_folder} folder is not empty")
 
 
@@ -131,6 +135,17 @@ def sample(
     for key in param_space.keys():
         if key not in list(param_space_margins.keys()):
             raise RuntimeError("No margins given for: " + str(key))
+
+    # Make sure rad_params are valid
+    for k, v in rad_params.items():
+        if len(v) != 3:
+            raise RuntimeError(f"Invalid length in radiation parameter with key {k}: {v} has {len(v)} != 3 elements")
+        if not os.path.isfile(v[0]):
+            raise RuntimeError(f"Not a valid spectrum file: {v[0]}")
+        if v[2] not in ["log", "lin"]:
+            raise RuntimeError(f"Radiation parameter can be interpreted as 'log' or 'lin'; got {v[2]}")
+        if k not in list(rad_params_margins.keys()):
+            raise RuntimeError(f"No margins given for radiation parameter {k}")
 
     # Make sure we have a starting point - grid or preexisting data
     if not initial_grid and not existing_data:
@@ -151,6 +166,10 @@ def sample(
     except (KeyError, SyntaxError):
         print("Error while filling cloudy input: Missing parameter or syntax error")
         exit()
+
+    # Check if cleanup parameter is valid
+    if cleanup not in [None, "outfiles", "full"]:
+        raise RuntimeError(f"Invalid value for cleanup parameter: {cleanup}")
 
     ####################################################################################################################
     ################################################    Diagnostics    #################################################
@@ -220,14 +239,14 @@ def sample(
     existing_point_count = 0
     if existing_data:
         for dpath in existing_data:
-            if os.path.isfile(existing_data):
+            if os.path.isfile(dpath):
                 print("Attempting to read datafile", dpath)
                 points = pd.concat((
                     points,
-                    pd.read_csv(dpath, delimiter=",")
+                    pd.read_csv(dpath, delimiter=sep)
                 ))
 
-            elif os.path.isdir(existing_data):
+            elif os.path.isdir(dpath):
                 print("Attempting to recursively read raw data from folder", dpath)
                 points = pd.concat((
                     points,
@@ -479,6 +498,17 @@ def sample(
         if plot_iterations:
             _plot_parameter_space(points, new_points, coord_list, output_folder, iteration)
 
+        if cleanup:
+            print("Performing cleanup, mode:", cleanup)
+            folder = os.path.join(output_folder, f"iteration{iteration - 1}")
+            if cleanup == "outfiles":
+                for fname in os.listdir(folder):
+                    if fname.endswith(".out"):
+                        os.remove(os.path.join(folder, fname))
+            if cleanup == "full":
+                for fname in os.listdir(folder):
+                    os.remove(os.path.join(folder, fname))
+
 
         # Check the various conditions for quitting
         threshold_condition = False
@@ -575,8 +605,8 @@ def sample(
 
     print("Building and saving final Delaunay triangulation...")
     tri = spatial.Delaunay(points[coord_list].to_numpy())
-    np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=",", fmt="%i")
-    np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=",", fmt="%i")
+    np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
+    np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
 
     points = points.drop(["interpolated", "diff"], axis=1)
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
