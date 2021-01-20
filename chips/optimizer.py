@@ -9,6 +9,10 @@ import time
 from parse import parse
 from matplotlib import patches
 
+# TODO Feature for reading existing data from CSV
+# TODO General cleanup, documentation
+# TODO Custom delimiters
+
 sns.set()
 
 # 3 = cooling, 2 = heating
@@ -75,8 +79,10 @@ def sample(
                                             key: path to radiation input file; must contain data in format f(x) x
     :param rad_params_margins:              2 values: absolute. 1 value: relative
     :param rad_params_names:                TODO optional prettier names
-    :param existing_data:                   Path to folder containing results of previous run to load. Should use same
-                                            parameters and filename_pattern as current run.
+    :param existing_data:                   Iterable of strings. Either filenames or foldernames.
+                                            If filename: File is loaded as .csv file as output by previous runs.
+                                            If foldername: All cloudy output files in folder and subfolders will
+                                            be read in. Note filename pattern.
     :param initial_grid:                    How many samples in each dimension in initial grid. 0 to disable
                                             Used for outer hull if amorphous grid is used
     :param dex_threshold:                   How close an interpolation has to be to the real value to be considered
@@ -213,13 +219,21 @@ def sample(
     # Load existing data if applicable
     existing_point_count = 0
     if existing_data:
-        if not os.path.isdir(existing_data):
-            raise RuntimeError("Specified existing data at " + str(existing_data) + " but is not a dir or does not exist")
+        for dpath in existing_data:
+            if os.path.isfile(existing_data):
+                print("Attempting to read datafile", dpath)
+                points = pd.concat((
+                    points,
+                    pd.read_csv(dpath, delimiter=",")
+                ))
 
-        points = pd.concat((
-            points,
-            _load_existing_data(existing_data, filename_pattern, coordinates)
-        ))
+            if os.path.isdir(existing_data):
+                print("Attempting to recursively read raw data from folder", dpath)
+                points = pd.concat((
+                    points,
+                    # TODO rename to load existing rawdata?
+                    _load_existing_data(existing_data, filename_pattern, coordinates)
+                ))
 
         existing_point_count = len(points.index)
 
