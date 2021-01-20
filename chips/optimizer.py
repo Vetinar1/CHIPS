@@ -227,13 +227,15 @@ def sample(
                     pd.read_csv(dpath, delimiter=",")
                 ))
 
-            if os.path.isdir(existing_data):
+            elif os.path.isdir(existing_data):
                 print("Attempting to recursively read raw data from folder", dpath)
                 points = pd.concat((
                     points,
                     # TODO rename to load existing rawdata?
                     _load_existing_data(existing_data, filename_pattern, coordinates)
                 ))
+            else:
+                raise RuntimeError(f"Error: {dpath} is not a valid file or folder")
 
         existing_point_count = len(points.index)
 
