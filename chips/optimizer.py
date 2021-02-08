@@ -11,6 +11,8 @@ from matplotlib import patches
 
 # TODO General cleanup, documentation
 # TODO Function for interpolating with delaunay, standalone
+# TODO output initial spacing, remove grid option, clear up naming
+# TODO fix final output ("sampled -235234 new points")
 
 sns.set()
 
@@ -603,12 +605,12 @@ def sample(
     print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
+    points = points.drop(["interpolated", "diff"], axis=1)
+
     print("Building and saving final Delaunay triangulation...")
     tri = spatial.Delaunay(points[coord_list].to_numpy())
     np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
     np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
-
-    points = points.drop(["interpolated", "diff"], axis=1)
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     print("Done")
@@ -1225,3 +1227,30 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
 
     return points
 
+
+def sample_degenerate_simplices(points, coords):
+    """
+    Function that returns the centroids of simplices too degenerate for DIP.
+
+    :param points:
+    :param coords:
+    :return:
+    """
+
+
+def build_and_save_delaunay(points, coords, filename, sep=","):
+    """
+    Helper function to build and save a triangulation on a given set of points. Mostly for debuggin
+
+    :param points:      pandas Dataframe
+    :param coords:      list
+    :param filename:    string
+    :param sep:         csv separator
+    :return:
+    """
+    tri = spatial.Delaunay(points[coords].to_numpy())
+    np.savetxt(filename + ".tris", tri.simplices.astype(int), delimiter=sep, fmt="%i")
+    np.savetxt(filename + ".neighbors", tri.neighbors.astype(int), delimiter=sep, fmt="%i")
+    print(len(points.index))
+    print(tri.simplices.shape)
+    print(tri.neighbors.shape)

@@ -12,6 +12,11 @@ from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from parse import parse
 
+points = pd.read_csv("run39_gasoline_z0_header2_extended2/z0.0.points")
+print(points)
+optimizer.build_and_save_delaunay(points, ["T", "nH", "SFR", "old"], "testrebuild")
+exit()
+
 maxpoints = 0
 maxtris = 0
 pathlist = Path("run29_3d").glob("*.points")

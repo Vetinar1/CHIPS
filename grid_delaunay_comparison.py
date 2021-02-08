@@ -10,8 +10,10 @@ from pathlib import Path
 from pprint import pprint
 from parse import parse
 
-GRID_DATA = "grid_gasoline_header2/grid_gasoline_header2.csv"
-DEL_DATA = "run37_gasoline_z0_header2/z0.0.points"
+GRID_DATA = "gasoline_header2_grid/grid_gasoline_header2.csv"
+DEL_DATA = "gasoline_header2_random/random_gasoline_header2.csv"
+# DEL_DATA = "run37_gasoline_z0_header2/z0.0.points"
+# DEL_DATA = "run39_gasoline_z0_header2_extended2/z0.0.points"
 
 gridpoints = pd.read_csv(GRID_DATA, delimiter=",")
 delpoints = pd.read_csv(DEL_DATA, delimiter=",")
@@ -60,6 +62,9 @@ print("Interpolation of grid values by Triangulation:")
 print("Maximum Difference:", np.max(np.abs(gridpoints["diff"])))
 print("Median Difference:", np.median(np.abs(gridpoints["diff"])))
 print("Average Difference: ", np.average(np.abs(gridpoints["diff"])))
+delmaxdiff = np.max(np.abs(gridpoints["diff"]))
+delmedian = np.median(np.abs(gridpoints["diff"]))
+delavg = np.average(np.abs(gridpoints["diff"]))
 
 gridpoints_plot = gridpoints.copy()
 gridpoints = gridpoints.drop(["interpolated", "diff"], axis=1)
@@ -97,7 +102,7 @@ delpoints["interpolated"] = interpn(
 )
 delpoints["diff"] = delpoints["values"] - delpoints["interpolated"]
 
-print(delpoints["diff"].isna().sum())
+print()
 print("Interpolation of Triangulation values by grid:")
 print("Maximum Difference:", np.max(np.abs(delpoints["diff"])))
 print("Median Difference:", delpoints["diff"].abs().median())
@@ -113,24 +118,33 @@ print("Average Difference: ", np.abs(delpoints["diff"].abs().mean()))
 # dx = X1[1] - X1[0]
 # plt.plot(X1[1:], np.cumsum(H)*dx)
 
+plt.figure(figsize=(8, 6))
 plt.title("Normalized cumsum")
+plt.axvline(delmedian, c="b", linestyle="--")
+plt.axvline(delpoints["diff"].abs().median(), c="orange", linestyle="--")
+plt.axvline(delavg, c="b", linestyle=":")
+plt.axvline(delpoints["diff"].abs().mean(), c="orange", linestyle=":")
+plt.axhline(0.5, c="k", linestyle="--")
 X3 = np.sort(gridpoints_plot["diff"].abs().dropna())
-plt.plot(X3, np.arange(X3.shape[0])/X3.shape[0], label="Delaunay -> Grid")
+plt.plot(X3, np.arange(X3.shape[0])/X3.shape[0], label="Delaunay -> Grid", c="b")
 X2 = np.sort(delpoints["diff"].abs().dropna())
-plt.plot(X2, np.arange(X2.shape[0])/X2.shape[0], label="Grid -> Delaunay")
+plt.plot(X2, np.arange(X2.shape[0])/X2.shape[0], label="Grid -> Delaunay", c="orange")
 plt.legend()
 plt.ylabel("Normalized cumulative sum")
 plt.xlabel("Absolute difference")
-plt.xlim(-0.5, 4)
-plt.show()
+plt.xlim(-0.5, 2.5)
+# plt.show()
+plt.savefig("comparison_plots/gridvsrandom.png")
+# plt.close()
 
-plt.title("Not-Normalized cumsum")
-X3 = np.sort(gridpoints_plot["diff"].abs().dropna())
-plt.plot(X3, np.arange(X3.shape[0]), label="Delaunay -> Grid")
-X2 = np.sort(delpoints["diff"].abs().dropna())
-plt.plot(X2, np.arange(X2.shape[0]), label="Grid -> Delaunay")
-plt.legend()
-plt.ylabel("Normalized cumulative sum")
-plt.xlabel("Absolute difference")
-plt.xlim(-0.5, 4)
-plt.show()
+# plt.title("Not-Normalized cumsum")
+# X3 = np.sort(gridpoints_plot["diff"].abs().dropna())
+# plt.plot(X3, np.arange(X3.shape[0]), label="Delaunay -> Grid")
+# X2 = np.sort(delpoints["diff"].abs().dropna())
+# plt.plot(X2, np.arange(X2.shape[0]), label="Grid -> Delaunay")
+# plt.legend()
+# plt.ylabel("cumulative sum")
+# plt.xlabel("Absolute difference")
+# plt.xlim(-0.5, 4)
+# plt.show()
+# # plt.savefig("cumsum-small.png")
