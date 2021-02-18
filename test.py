@@ -12,6 +12,41 @@ from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from parse import parse
 
+optimizer.COLUMN_INDEX = 2
+for i in np.linspace(3, 9, 13):
+    points = optimizer.load_existing_data(
+        "run40_gasoline_z3-9_second_header/z" + str(round(i, 1)),
+        "T_{T}__nH_{nH}__SFR_{SFR}__old_{old}",
+        ["T", "nH", "SFR", "old"]
+    )
+    print(points.head())
+    optimizer.build_and_save_delaunay(
+        points,
+        ["T", "nH", "SFR", "old"],
+        "run40_heating/z" + str(round(i, 1))
+    )
+    points.to_csv("run40_heating/z" + str(round(i, 1)) + ".points", index=False)
+exit()
+
+
+T = np.linspace(2, 9, 71)
+nH = np.linspace(-9, 4, 14)
+old = np.linspace(6, 12, 7)
+SFR = np.linspace(-5, 3, 9)
+coords = np.array(np.meshgrid(T, nH, old, SFR)).reshape(4, -1).T
+print(coords)
+print(coords.shape)
+exit()
+
+points = np.random.uniform(size=(100, 2))
+tri = spatial.Delaunay(points)
+plt.triplot(points[:,0], points[:,1], tri.simplices)
+for i, simp in enumerate(tri.simplices):
+    xy = np.sum(points[simp], axis=0) / 3
+    plt.plot(xy[0], xy[1], "r.")
+plt.show()
+exit()
+
 points = pd.read_csv("run39_gasoline_z0_header2_extended2/z0.0.points")
 print(points)
 optimizer.build_and_save_delaunay(points, ["T", "nH", "SFR", "old"], "testrebuild")
@@ -102,7 +137,7 @@ exit()
 
 
 
-data = optimizer._load_existing_data(
+data = optimizer.load_existing_data(
     "run28_2d/",
     "T_{T}__z_{z}",
     ["T", "z"]

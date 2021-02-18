@@ -253,7 +253,7 @@ def sample(
                 points = pd.concat((
                     points,
                     # TODO rename to load existing rawdata?
-                    _load_existing_data(existing_data, filename_pattern, coordinates)
+                    load_existing_data(existing_data, filename_pattern, coordinates)
                 ))
             else:
                 raise RuntimeError(f"Error: {dpath} is not a valid file or folder")
@@ -857,14 +857,14 @@ def _load_point(filename, filename_pattern, coordinates):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
     try:
-        point["values"] = np.log10(float(np.loadtxt(filename, usecols=3)))
+        point["values"] = np.log10(float(np.loadtxt(filename, usecols=COLUMN_INDEX)))
         return point
     except:
         print("Could not read point from file", filename)
         return None
 
 
-def _load_existing_data(folder, filename_pattern, coordinates):
+def load_existing_data(folder, filename_pattern, coordinates):
     """
     Loads Ctot from all files ending in .cool in the given folder and subfolders.
 
@@ -1240,7 +1240,7 @@ def sample_degenerate_simplices(points, coords):
 
 def build_and_save_delaunay(points, coords, filename, sep=","):
     """
-    Helper function to build and save a triangulation on a given set of points. Mostly for debuggin
+    Helper function to build and save a triangulation on a given set of points. Mostly for debugging
 
     :param points:      pandas Dataframe
     :param coords:      list
@@ -1251,6 +1251,3 @@ def build_and_save_delaunay(points, coords, filename, sep=","):
     tri = spatial.Delaunay(points[coords].to_numpy())
     np.savetxt(filename + ".tris", tri.simplices.astype(int), delimiter=sep, fmt="%i")
     np.savetxt(filename + ".neighbors", tri.neighbors.astype(int), delimiter=sep, fmt="%i")
-    print(len(points.index))
-    print(tri.simplices.shape)
-    print(tri.neighbors.shape)

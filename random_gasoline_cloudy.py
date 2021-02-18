@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from itertools import product
-from chips.optimizer import _get_rad_bg_as_function, _f_nu_to_string, _load_existing_data
+from chips.optimizer import _get_rad_bg_as_function, _f_nu_to_string, load_existing_data
 import matplotlib.pyplot as plt
 
 cloudy_input = """CMB redshift {z}
@@ -117,5 +117,5 @@ os.mkdir(folder)
 for filename in filenames:
     os.system(f"mv {filename}* {folder}")
 
-points = _load_existing_data(folder, filename_pattern, ["T", "nH", "old", "SFR"])
+points = load_existing_data(folder, filename_pattern, ["T", "nH", "old", "SFR"])
 points.to_csv("random_gasoline_header2.csv", index=False)

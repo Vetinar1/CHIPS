@@ -17,7 +17,7 @@ print short
 set save prefix "{fname}"
 save overview last ".overview"
 save cooling last ".cool"
-save heating last ".heat"
+#save heating last ".heat"
 save cooling each last ".cool_by_element"
 save element hydrogen last ".H_ionf"
 save element helium last ".He_ionf"
