@@ -978,10 +978,11 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, perturbation_s
     )
 
     # Stretch cube to fit parameter space
+    # Note: Changing this now to stretch over margins as well, required for stability. technically core != core
     core_columns = list(points.columns)
     core_columns.remove("values")
     core = pd.DataFrame(core, columns=core_columns)
-    for param, limits in parameter_space.items():
+    for param, limits in _get_param_space_with_margins(parameter_space, margins).items():
         core[param] = (max(limits) - min(limits)) * core[param] + min(limits)
 
     core["values"] = np.nan

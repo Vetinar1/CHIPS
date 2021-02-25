@@ -12,6 +12,26 @@ from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from parse import parse
 
+fig = plt.figure()
+ax = plt.axes(projection="3d", proj_type="ortho")
+point = [8.37, 2.6, -2]
+simp = np.array([
+    [6.9, 5.3, -2.2],
+    [6.9, 0.1, -2.2],
+    [9.7, 0.1, -2.2],
+    [9.7, 5.3, -2.2]
+])
+
+ax.plot(simp[:,0], simp[:,1], simp[:,2], "o", color="blue")
+ax.plot([point[0]], [point[1]], [point[2]], "o", color="red")
+plt.show()
+exit()
+
+# ms for 10k interps
+mesh2 = [31] * 10
+mesh3 = []
+exit()
+
 optimizer.COLUMN_INDEX = 2
 for i in np.linspace(3, 9, 13):
     points = optimizer.load_existing_data(
