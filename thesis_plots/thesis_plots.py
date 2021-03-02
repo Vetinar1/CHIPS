@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from chips.utils import poisson_disc_sampling
-from scipy import spatial
+from scipy import spatial, optimize
 
 FORMAT = "svg"
 
@@ -422,10 +422,48 @@ def plot_bary_guide(show=True):
     plt.close()
 
 
+def plot_complexities(show=True):
+    def exp(x, a):
+        return a * 2**x
+
+    def cube(x, a, b):
+        return a * x**3 + b
+
+    # ms for 10k interps
+    mesh2 = np.array([38.302, 31.095, 31.233, 31.244, 31.387, 31.359, 31.159, 31.369, 31.199, 31.252])
+    mesh3 = np.array([122, 114, 114, 115, 114, 113, 113, 114, 113, 113])
+    mesh4 = np.array([399, 395, 396, 392, 398, 396, 395, 396, 395, 396])
+
+    grid2 = np.array([6.421, 5.373, 5.286, 5.445, 5.290, 5.296, 5.452, 5.287, 5.289, 5.290])
+
+    p_mesh = [mesh2.mean(), mesh3.mean(), mesh4.mean()]
+    std_mesh = [mesh2.std(), mesh3.std(), mesh4.std()]
+
+    m_opt, pcov = optimize.curve_fit(cube, [2, 3, 4], p_mesh)
+
+    plt.errorbar([2, 3, 4], p_mesh, yerr=std_mesh)
+    plt.plot(
+        np.linspace(2, 4.1, 100),
+        cube(np.linspace(2, 4.1, 100), *m_opt)
+    )
+
+    plt.gca().xaxis.set_ticklabels([2, 3, 4])
+    # plt.gca().yaxis.set_ticklabels([])
+    plt.gca().set_xticks([2, 3, 4])
+    # plt.gca().set_yticks([])
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("06_time_complexities." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
 if __name__ == "__main__":
-    show = False
+    show = True
     # plot_mli_nonlinear(show=show)
     # plot_mli_cube(show=show)
     # plot_flips(show=show)
-    plot_delaunay_progression(show=show)
-    plot_bary_guide(show=show)
+    # plot_delaunay_progression(show=show)
+    # plot_bary_guide(show=show)
+    plot_complexities(show=show)

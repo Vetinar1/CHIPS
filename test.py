@@ -12,24 +12,19 @@ from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from parse import parse
 
-fig = plt.figure()
-ax = plt.axes(projection="3d", proj_type="ortho")
-point = [8.37, 2.6, -2]
-simp = np.array([
-    [6.9, 5.3, -2.2],
-    [6.9, 0.1, -2.2],
-    [9.7, 0.1, -2.2],
-    [9.7, 5.3, -2.2]
-])
-
-ax.plot(simp[:,0], simp[:,1], simp[:,2], "o", color="blue")
-ax.plot([point[0]], [point[1]], [point[2]], "o", color="red")
-plt.show()
-exit()
-
-# ms for 10k interps
-mesh2 = [31] * 10
-mesh3 = []
+points = pd.read_csv("run43_complexity4/z3.0.points")
+points = points[points["T"] >= 2]
+points = points[points["T"] <= 9]
+points = points[points["nH"] >= -9]
+points = points[points["nH"] <= 4]
+points = points[points["Z"] >= -2]
+points = points[points["Z"] <= 0]
+points = points[points["old"] >= 6]
+points = points[points["old"] <= 12]
+points = points.reset_index(drop = True)
+print(points)
+optimizer.build_and_save_delaunay(points, ["T", "nH", "Z", "old"], "experiment")
+points.to_csv("experiment.points", index=False)
 exit()
 
 optimizer.COLUMN_INDEX = 2
