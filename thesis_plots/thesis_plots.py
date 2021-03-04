@@ -3,8 +3,12 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from chips.utils import poisson_disc_sampling
 from scipy import spatial, optimize
+import pandas as pd
+from scipy.interpolate import interpn
+from matplotlib.lines import Line2D
+import seaborn as sns
 
-FORMAT = "svg"
+FORMAT = "pdf"
 
 def plot_mli_cube(bg=True, az = -64, el = 20, show=True):
     cube = np.array([
@@ -459,6 +463,194 @@ def plot_complexities(show=True):
     plt.close()
 
 
+def plot_cumsum(show=True):
+    GRID_DATA = "../gasoline_header2_grid/grid_gasoline_header2.csv"
+    RAND_DATA = "../gasoline_header2_random/random_gasoline_header2.csv"
+    DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
+    # DEL_DATA = "run39_gasoline_z0_header2_extended2/z0.0.points"
+
+    gridpoints = pd.read_csv(GRID_DATA, delimiter=",")
+    delpoints = pd.read_csv(DEL_DATA, delimiter=",")
+    randpoints = pd.read_csv(RAND_DATA, delimiter=",")
+
+    print("No. Gridpoints:", len(gridpoints.index))
+    print("No. Randpoints:", len(randpoints.index))
+    print("No. Delpoints:", len(delpoints.index))
+
+    # ensuring column order
+    gridpoints = gridpoints[["T", "nH", "SFR", "old", "values"]]
+    delpoints = delpoints[["T", "nH", "SFR", "old", "values"]]
+    randpoints = randpoints[["T", "nH", "SFR", "old", "values"]]
+
+    # the coordinates at which we will interpolate
+    interp_coords = randpoints.drop("values", axis=1).to_numpy()
+
+    # Delaunay interpolation
+    N = delpoints.shape[1]-1
+    tri = spatial.Delaunay(delpoints.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            delpoints.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del"] = vals
+    randpoints["diff_del"] = randpoints["values"] - randpoints["interp_del"]
+
+    delmaxdiff = np.max(np.abs(randpoints["diff_del"]))
+    delmedian = np.median(np.abs(randpoints["diff_del"]))
+    delavg = np.average(np.abs(randpoints["diff_del"]))
+
+
+    # Multilinear interpolation
+    # Transform from 2d dataframe into Nd array
+    arrpoints = gridpoints.copy()
+    for column in arrpoints.columns[:-1]:
+        colvals = np.sort(arrpoints[column].unique())
+        arrpoints[column] -= colvals[0]
+        colvals = np.sort(arrpoints[column].unique())
+        arrpoints[column] /= colvals[1]
+        arrpoints[column] = arrpoints[column].astype(int)
+
+    valgrid = np.empty(tuple(np.sort(gridpoints[column].unique()).shape[0] for column in gridpoints.columns[:-1]))
+    valgrid[:] = np.nan
+
+    for row in arrpoints.itertuples():
+        valgrid[row[1:-1]] = row[-1]
+
+    # Clamp
+    randpoints = randpoints.loc[randpoints["T"] >= 2]
+    randpoints = randpoints.loc[randpoints["T"] <= 9]
+    randpoints = randpoints.loc[randpoints["nH"] >= -9]
+    randpoints = randpoints.loc[randpoints["nH"] <= 4]
+    randpoints = randpoints.loc[randpoints["SFR"] >= -5]
+    randpoints = randpoints.loc[randpoints["SFR"] <= 3]
+    randpoints = randpoints.loc[randpoints["old"] >= 6]
+    randpoints = randpoints.loc[randpoints["old"] <= 12]
+
+    # interpolate
+    randpoints["interp_grid"] = interpn(
+        tuple(np.sort(gridpoints[column].unique()) for column in gridpoints.columns[:-1]),
+        valgrid,
+        randpoints[["T", "nH", "SFR", "old"]].to_numpy(),
+        method="linear"
+    )
+    randpoints["diff_grid"] = randpoints["values"] - randpoints["interp_grid"]
+
+    gridmaxdiff = np.max(np.abs(randpoints["diff_grid"]).dropna())
+    gridmedian = np.median(np.abs(randpoints["diff_grid"]).dropna())
+    gridavg = np.average(np.abs(randpoints["diff_grid"]).dropna())
+
+    # Plotting
+    plt.figure()
+    plt.title("Cumulative Sum of Errors")
+    plt.axvline(delmedian, c="b", linestyle="--")
+    plt.axvline(delavg, c="b", linestyle=":")
+
+    plt.axvline(gridmedian, c="orange", linestyle="--")
+    plt.axvline(gridavg, c="orange", linestyle=":")
+
+    plt.axhline(0.5, c="k", lw=0.5)
+
+    X3 = np.sort(randpoints["diff_del"].abs().dropna())
+    plt.plot(X3, np.arange(X3.shape[0]) / X3.shape[0], label="Delaunay Mesh Interpolation", c="b")
+    X2 = np.sort(randpoints["diff_grid"].abs().dropna())
+    plt.plot(X2, np.arange(X2.shape[0]) / X2.shape[0], label="Multilinear Grid Interpolation", c="orange")
+
+    legend_elements = [
+        Line2D([0], [0], color="b", label="Delaunay Mesh Interpolation"),
+        Line2D([0], [0], color="orange", label="Multilinear Grid Interpolation"),
+        Line2D([0], [0], color="k", linestyle="--", label="Median"),
+        Line2D([0], [0], color="k", linestyle=":", label="Mean")
+    ]
+    plt.legend(handles=legend_elements)
+    plt.ylabel("Normalized cumulative sum")
+    plt.xlabel(r"$|\Lambda - \Lambda_{\mathrm{interpolated}}|$ in dex")
+    plt.xlim(-0.05, 0.5)
+
+    print("Delmedian\t", round(delmedian, 4))
+    print("Delavg\t\t", round(delavg, 4))
+    print("Gridmedian\t", round(gridmedian, 4))
+    print("Gridavg\t\t", round(gridavg, 4))
+    print("Delmedian / Gridmedian", round(delmedian / gridmedian, 4))
+    print("Delavg / Gridavg\t", round(delavg / gridavg, 4))
+    print("Gridmedian / Delmedian", round(gridmedian / delmedian, 4))
+    print("Gridavg / Delavg\t", round(gridavg / delavg, 4))
+    print("Delmaxerror\t", delmaxdiff)
+    print("Gridmaxerror\t", gridmaxdiff)
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("07_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+    plotpoints = randpoints#.sample(10000)
+    plotvals = plotpoints["diff_del"].abs()
+    def scatter_color(x, y, **kwargs):
+        del kwargs["color"]
+        plt.scatter(
+            x,
+            y,
+            vmin=0,
+            vmax=0.5,
+            s=0.1,
+            c=plotvals,
+            **kwargs
+        )
+
+    grid = sns.PairGrid(
+        plotpoints,
+        vars=["T", "nH", "SFR", "old"],
+        corner=True,
+        height=3.5
+    )
+    grid.map_lower(scatter_color)
+    grid.map_diag(lambda x, **kwargs: plt.colorbar())
+    if show:
+        plt.show()
+    else:
+        grid.savefig("08_del_err_dist." + FORMAT, transparent=True, bbox_inches="tight")
+
+    plt.close()
+
+    plotvals = plotpoints["diff_grid"].abs()
+    grid = sns.PairGrid(
+        plotpoints,
+        vars=["T", "nH", "SFR", "old"],
+        corner=True,
+        height=3.5
+    )
+    grid.map_lower(scatter_color)
+    grid.map_diag(lambda x, **kwargs: plt.colorbar())
+    if show:
+        plt.show()
+    else:
+        grid.savefig("09_grid_err_dist." + FORMAT, transparent=True, bbox_inches="tight")
+
+    plt.close()
+
+
+
+    # if show:
+    #     plt.show()
+    # else:
+    #     plt.savefig("07_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
+    # plt.close()
+
+
 if __name__ == "__main__":
     show = True
     # plot_mli_nonlinear(show=show)
@@ -466,4 +658,5 @@ if __name__ == "__main__":
     # plot_flips(show=show)
     # plot_delaunay_progression(show=show)
     # plot_bary_guide(show=show)
-    plot_complexities(show=show)
+    # plot_complexities(show=show)
+    plot_cumsum(show=show)
