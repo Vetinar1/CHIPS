@@ -608,6 +608,11 @@ def sample(
     points = points.drop(["interpolated", "diff"], axis=1)
 
     print("Building and saving final Delaunay triangulation...")
+    points.to_csv(os.path.join(output_folder, output_filename + ".fullpoints"), index=False)
+    for coord in coordinates.items():
+        points = points[points[coord[0]] >= coord[1][0]]
+        points = points[points[coord[0]] <= coord[1][1]]
+
     tri = spatial.Delaunay(points[coord_list].to_numpy())
     np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
     np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")

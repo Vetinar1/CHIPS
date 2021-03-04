@@ -38,39 +38,6 @@ def simple_print(var):
     print(var, sep="")
 
 
-def get_normalization_transform(min, max):
-    """
-    returns two functions, one to transform points in an interval linearly on [0, 1]
-    and one to transform back
-    """
-    def transform(x):
-        return (x - min) / abs(max - min)
-
-    def inv_transform(x):
-        return x * abs(max - min) + min
-
-    return transform, inv_transform
-
-
-def get_pruning_function(dims):
-    """
-    Returns a function to prune an array of points to an Nd cuboid.
-
-    :param dims:    List: [[min, max], [min, max], ...]
-                    len(list) <= points.shape[1]!
-                    min_i < max_i!
-    :return:        pruning function
-    """
-    def prune(points):
-        mask = np.ones(points.shape[0], dtype=bool)
-        for i, dim in enumerate(dims):
-            mask[(points[:, i] < dim[0]) | (points[:, i] > dim[1])] = 0
-
-        return points[mask]
-
-    return prune
-
-
 def drop_all_rows_containing_nan(array):
     """
     Returns a copy of the array that lacks all rows that originally contained a np.nan value.
@@ -122,6 +89,9 @@ def sample_simplex(simplex):
         point += simplex[i-1] * ( (1 - l[i]) * np.prod(l[:i]))  # simplex[i-1] because of 0 indexing
 
     return point
+
+
+
 
 
 def sample_simplices(simplices):
@@ -218,23 +188,6 @@ def poisson_disc_sampling(space, r, k=30):
             break
 
     return out
-
-
-def drop_duplicates_and_print(points):
-    """
-    Drops duplicates from dataframe in place and prints to stdout if any were dropped.
-
-    :param points:
-    :return:
-    """
-    len_pre_drop =  len(points.index)
-    points = points.drop_duplicates(ignore_index=True)
-    len_post_drop = len(points.index)
-    n_dropped = len_pre_drop - len_post_drop
-
-    if len_pre_drop > len_post_drop:
-        print(f"Dropped {n_dropped} duplicate samples")
-
 
 if __name__ == "__main__":
     points = poisson_disc_sampling(

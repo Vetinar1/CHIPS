@@ -229,6 +229,7 @@ def plot_flips(show=True):
 
     tx = 0.5
     ty = 0.85
+    plt.plot([centroids[12,0], tx], [centroids[12,1], ty], lw=0.5, color="tab:blue")
     for t in ((12, 13), (13, 11), (11, 9), (9, 8), (8, 4)):
         plt.annotate(
             s="",
@@ -463,7 +464,7 @@ if __name__ == "__main__":
     show = True
     # plot_mli_nonlinear(show=show)
     # plot_mli_cube(show=show)
-    # plot_flips(show=show)
+    plot_flips(show=show)
     # plot_delaunay_progression(show=show)
     # plot_bary_guide(show=show)
-    plot_complexities(show=show)
+    # plot_complexities(show=show)

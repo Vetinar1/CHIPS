@@ -10,11 +10,11 @@ from scipy import spatial
 interp_loaded = np.loadtxt("ctest/interp", delimiter=" ")
 # tree_radius = np.loadtxt("ctest/tree", delimiter=" ", usecols=3)
 # ptree_radius = np.loadtxt("ctest/ptree", delimiter=" ", usecols=3)
-points = np.loadtxt("run29_3d_compiled/z3.9.points", delimiter=",")
-ctris = np.loadtxt("run29_3d_compiled/z3.9.tris", delimiter=",").astype(int)
+points = np.loadtxt("run41_complexity2/z3.0.points", delimiter=",", skiprows=1)
+ctris = np.loadtxt("run41_complexity2/z3.0.tris", delimiter=",").astype(int)
 PLOT_S_TREE = False
-PLOT_C_INTERP = True
-PLOT_P_INTERP = False
+PLOT_C_INTERP = False
+PLOT_P_INTERP = True
 PLOT_TRI = False
 PLOT_DIFF = False
 PLOT_P_TREE = False
@@ -76,7 +76,7 @@ if PLOT_P_INTERP:
     plt.triplot(points[:,0], points[:,1], triangles=tri.simplices, linewidth=0.5, color="r")
     # plt.scatter(interp_coords[:,0], interp_coords[:,1], c=vals, s=2)
     plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
-    plt.colorbar()
+    # plt.colorbar()
     plt.clim(vmin=-32, vmax=-13)
     plt.xlim(1, 9)
     plt.ylim(-5, 5)
@@ -98,15 +98,15 @@ if PLOT_C_INTERP:
     if PLOT_TRI:
         plt.triplot(points[:,0], points[:,1], triangles=ctris, linewidth=0.5, color="r")
         plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
-    plt.scatter(interp_loaded[:,0], interp_loaded[:,1], c=interp_loaded[:,2], s=2)
+    plt.scatter(interp_loaded[:,1], interp_loaded[:,0], c=interp_loaded[:,2], s=2)
     plt.colorbar()
     plt.clim(vmin=-32, vmax=-13)
-    plt.xlim(1, 9)
-    plt.ylim(-5, 5)
+    plt.xlim(-0.5, 4.5)
+    plt.ylim(1, 9)
     plt.gcf().set_dpi(200)
-    plt.title(r"C interp")
-    plt.xlabel(r"Temperature $T$")
-    plt.ylabel(r"Hydrogen density $n_H$")
+    plt.title(r"C++ interpolation of $\Lambda$ at $n_H = 3$ (orthogonal to slices)")
+    plt.xlabel(r"Redshift $z$")
+    plt.ylabel(r"Temperature $T$")
     plt.savefig("cnotri.png", transparent=True)
     plt.show()
 
