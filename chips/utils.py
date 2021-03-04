@@ -91,7 +91,19 @@ def sample_simplex(simplex):
     return point
 
 
+def drop_duplicates_and_print(points):
+    """
+    Drops duplicates from dataframe in place and prints to stdout if any were dropped.
+    :param points:
+    :return:
+    """
+    len_pre_drop =  len(points.index)
+    points = points.drop_duplicates(ignore_index=True)
+    len_post_drop = len(points.index)
+    n_dropped = len_pre_drop - len_post_drop
 
+    if len_pre_drop > len_post_drop:
+        print(f"Dropped {n_dropped} duplicate samples")
 
 
 def sample_simplices(simplices):
