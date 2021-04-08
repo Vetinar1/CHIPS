@@ -1252,8 +1252,10 @@ def build_and_save_delaunay(points, coords, filename, sep=","):
     :param coords:      list
     :param filename:    string
     :param sep:         csv separator
-    :return:
+    :return:            Triangulation object
     """
     tri = spatial.Delaunay(points[coords].to_numpy())
     np.savetxt(filename + ".tris", tri.simplices.astype(int), delimiter=sep, fmt="%i")
     np.savetxt(filename + ".neighbors", tri.neighbors.astype(int), delimiter=sep, fmt="%i")
+
+    return tri

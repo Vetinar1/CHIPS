@@ -7,8 +7,9 @@ import pandas as pd
 from scipy.interpolate import interpn
 from matplotlib.lines import Line2D
 import seaborn as sns
+import scipy
 
-FORMAT = "pdf"
+FORMAT = "png"
 
 def plot_mli_cube(bg=True, az = -64, el = 20, show=True):
     cube = np.array([
@@ -148,19 +149,6 @@ def plot_mli_nonlinear(stilts=False, show=True):
                 color="k"
             )
 
-    ax.plot(
-        [coords[0, 0], coords[2, 0]],
-        [coords[0, 1], coords[2, 1]],
-        [coords[0, 2], coords[2, 2]],
-        color="tab:green"
-    )
-    ax.plot(
-        [coords[1, 0], coords[3, 0]],
-        [coords[1, 1], coords[3, 1]],
-        [coords[1, 2], coords[3, 2]],
-        color="tab:green"
-    )
-
     def linear_interp(x, x0, y0, x1, y1):
         return (y0 * (x1 - x) + y1 * (x - x0)) / (x1 - x0)
 
@@ -173,13 +161,27 @@ def plot_mli_nonlinear(stilts=False, show=True):
             [x, x],
             [coords[2, 1], coords[1, 1]],
             [z1, z2],
-            color="tab:blue"
+            color="blue"
         )
         y = coords[2, 1] + 1 - i / N
         z3 = linear_interp(y, coords[2, 1], z1, coords[1, 1], z2)
-        ax.plot(
-            [x], [y], [z3], "rs"
-        )
+        if i != 0 and i != N:
+            ax.plot(
+                [x], [y], [z3], "rs"
+            )
+
+    ax.plot(
+        [coords[0, 0], coords[2, 0]],
+        [coords[0, 1], coords[2, 1]],
+        [coords[0, 2], coords[2, 2]],
+        color="orange"
+    )
+    ax.plot(
+        [coords[1, 0], coords[3, 0]],
+        [coords[1, 1], coords[3, 1]],
+        [coords[1, 2], coords[3, 2]],
+        color="orange"
+    )
 
     ax.plot(coords[:, 0], coords[:, 1], coords[:, 2], "ko")
 
@@ -233,7 +235,7 @@ def plot_flips(show=True):
 
     tx = 0.5
     ty = 0.85
-    plt.plot([centroids[12,0], tx], [centroids[12,1], ty], lw=0.5, color="tab:blue")
+    plt.plot([centroids[12,0], tx], [centroids[12,1], ty], lw=0.5, color="blue")
     for t in ((12, 13), (13, 11), (11, 9), (9, 8), (8, 4)):
         plt.annotate(
             s="",
@@ -241,14 +243,15 @@ def plot_flips(show=True):
             xytext=centroids[t[0]],
             arrowprops={"arrowstyle":"simple", "facecolor":"red", "edgecolor":"red", "lw":0.2}
         )
-        plt.plot([centroids[t[1],0], tx], [centroids[t[1],1], ty], lw=0.5, color="tab:blue")
+        plt.plot([centroids[t[1],0], tx], [centroids[t[1],1], ty], lw=0.5, color="blue")
 
-    plt.plot([tx], [ty], "P", markersize=10)
+    plt.plot([tx], [ty], "P", markersize=10, color="blue")
     plt.triplot(points[:,0], points[:,1], tri.simplices, color="k")
     plt.gca().xaxis.set_ticklabels([])
     plt.gca().yaxis.set_ticklabels([])
     plt.gca().set_xticks([])
     plt.gca().set_yticks([])
+    # plt.gca().set_aspect("equal")
     plt.axis("off")
 
 
@@ -464,7 +467,7 @@ def plot_complexities(show=True):
     plt.close()
 
 
-def plot_cumsum(show=True):
+def plot_cumsum(show=True, plot_errs=True):
     GRID_DATA = "../gasoline_header2_grid/grid_gasoline_header2.csv"
     RAND_DATA = "../gasoline_header2_random/random_gasoline_header2.csv"
     DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
@@ -598,66 +601,400 @@ def plot_cumsum(show=True):
         plt.savefig("07_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
     plt.close()
 
-    plotpoints = randpoints#.sample(10000)
-    plotvals = plotpoints["diff_del"].abs()
-    def scatter_color(x, y, **kwargs):
-        del kwargs["color"]
-        plt.scatter(
-            x,
-            y,
-            vmin=0,
-            vmax=0.5,
-            s=0.1,
-            c=plotvals,
-            **kwargs
+
+
+def plot_flip_distribution(show=True):
+    dist2 = []
+
+    with open("../flip_distribution/mesh2", "r") as f:
+        for line in f:
+            line = line.replace("\n", "")
+            if len(line) == 1:
+                flips = int(line)
+                if flips >= 0 and flips >= 0:
+                    dist2.append(flips)
+    dist3 = []
+
+    with open("../flip_distribution/mesh3", "r") as f:
+        for line in f:
+            line = line.replace("\n", "")
+            if len(line) == 1:
+                flips = int(line)
+                if flips >= 0 and flips >= 0:
+                    dist3.append(flips)
+    dist4 = []
+
+    with open("../flip_distribution/mesh4", "r") as f:
+        for line in f:
+            line = line.replace("\n", "")
+            if len(line) == 1:
+                flips = int(line)
+                if flips >= 0 and flips >= 0:
+                    dist4.append(flips)
+
+    plt.hist(dist2, bins=np.linspace(-0.5, 10.5, 12))
+    plt.xlabel("Number of flips")
+    plt.ylabel("Count")
+    plt.title("2D")
+    plt.xticks(np.linspace(0, 10, 11))
+    plt.ylim(0, 6000)
+    if show:
+        plt.show()
+    else:
+        plt.savefig("10a_flips_dist_2D." + FORMAT, transparent=True, bbox_inches="tight")
+
+    plt.close()
+
+    plt.hist(dist3, bins=np.linspace(-0.5, 10.5, 12))
+    plt.xlabel("Number of flips")
+    plt.ylabel("Count")
+    plt.title("3D")
+    plt.xticks(np.linspace(0, 10, 11))
+    plt.ylim(0, 6000)
+    if show:
+        plt.show()
+    else:
+        plt.savefig("10b_flips_dist_3D." + FORMAT, transparent=True, bbox_inches="tight")
+
+    plt.close()
+
+    plt.hist(dist4, bins=np.linspace(-0.5, 10.5, 12))
+    plt.xlabel("Number of flips")
+    plt.ylabel("Count")
+    plt.title("4D")
+    plt.xticks(np.linspace(0, 10, 11))
+    plt.ylim(0, 6000)
+    if show:
+        plt.show()
+    else:
+        plt.savefig("10c_flips_dist_4D." + FORMAT, transparent=True, bbox_inches="tight")
+
+    plt.close()
+
+
+def plot_cooling_function():
+    cloudy_cool = np.zeros(71)
+    cloudy_heat = np.zeros(71)
+    for i, T in enumerate(np.linspace(2, 9, 71)):
+        print(np.loadtxt("../coolfct/T_" + str(T) + ".cool", usecols=3))
+        cloudy_cool[i] = np.log10(np.loadtxt("../coolfct/T_" + str(T) + ".cool", usecols=3))
+        cloudy_heat[i] = np.log10(np.loadtxt("../coolfct/T_" + str(T) + ".cool", usecols=2))
+
+    DEL_DATA = "../run45_gadget/z0.0.points"
+
+    delpoints = pd.read_csv(DEL_DATA, delimiter=",")
+
+    delpoints = delpoints[["T", "nH", "Z", "values"]]
+
+    # the coordinates at which we will interpolate
+    interp_coords = np.zeros((70, 3))
+    interp_coords[:,0] = np.linspace(2, 8.9, 70)
+    interp_coords[:,1] = 0
+    interp_coords[:,2] = -3
+
+    # Delaunay interpolation
+    N = delpoints.shape[1]-1
+    tri = spatial.Delaunay(delpoints.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            delpoints.to_numpy()[simplices[i], -1],
+            weights[i]
         )
 
-    grid = sns.PairGrid(
-        plotpoints,
-        vars=["T", "nH", "SFR", "old"],
-        corner=True,
-        height=3.5
+    plt.plot(np.linspace(2, 9, 71), cloudy_cool, label="cloudy")
+    plt.plot(np.linspace(2, 8.9, 70), vals, label="interp")
+    plt.legend()
+    plt.show()
+
+
+def plot_bary_plane(show=True):
+
+    coords = np.array([
+        [1.2, 1.3],
+        [1.6, 1.8],
+        [1.8, 1.2]
+    ])
+
+    vals = np.array([2, 1.2, 1])
+
+    x1, y1, x2, y2, x3, y3 = coords.flatten()
+
+    def get_bary(x, y, rnd=False):
+        l1 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / ((y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3))
+        l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / ((y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3))
+        l3 = 1 - l1 - l2
+        if rnd:
+            l1 = round(l1, 2)
+            l2 = round(l2, 2)
+            l3 = round(l3, 2)
+        return l1, l2, l3
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")#, proj_type="ortho")
+
+    for i, point in enumerate(coords):
+        ax.plot(
+            [point[0], point[0]],
+            [point[1], point[1]],
+            [0, vals[i]],
+            linewidth=0.5,
+            color="k"
+        )
+
+    ax.plot(
+        list(coords[:,0]) + [coords[0,0]],
+        list(coords[:,1]) + [coords[0,1]],
+        4*[0],
+        color="k"
     )
-    grid.map_lower(scatter_color)
-    grid.map_diag(lambda x, **kwargs: plt.colorbar())
+
+    ax.plot(
+        list(coords[:,0]) + [coords[0,0]],
+        list(coords[:,1]) + [coords[0,1]],
+        list(vals) + [vals[0]],
+        color="blue"
+    )
+
+    for i in np.linspace(1.1, 1.9, 10):
+        for j in np.linspace(1.1, 1.9, 10):
+            bary = get_bary(i, j)
+            ax.plot(
+                [i],
+                [j],
+                [sum([bary[i] * vals[i] for i in range(len(bary))])],
+                color="orange",
+                marker="."
+            )
+
+    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+
+    ax.xaxis.set_ticklabels([])
+    ax.yaxis.set_ticklabels([])
+    ax.zaxis.set_ticklabels([])
+
+    ax.set_xlim(1, 2)
+    ax.set_ylim(1, 2)
+    ax.set_zlim(0, 2)
+
+    # ax.azim = -30
+    # ax.elev = 30
+    ax.set_xlabel(r"$x$")
+    ax.set_ylabel(r"$y$")
+    ax.set_zlabel(r"$f(x, y)$")
+
     if show:
         plt.show()
     else:
-        grid.savefig("08_del_err_dist." + FORMAT, transparent=True, bbox_inches="tight")
-
+        plt.savefig("12_bary_plane." + FORMAT, transparent=True, bbox_inches="tight")
     plt.close()
 
-    plotvals = plotpoints["diff_grid"].abs()
-    grid = sns.PairGrid(
-        plotpoints,
-        vars=["T", "nH", "SFR", "old"],
-        corner=True,
-        height=3.5
+
+
+def plot_sf_guide(show=True):
+
+    points = np.array([
+        [1, 1.],
+        [5, 3],
+        [2, 5],
+        [1, 1]
+    ])
+    points[:,0] *= 4/3.
+    points *= 0.8
+
+    interpoint = np.array([1.7, 4.5])
+
+    fig = plt.figure()
+    plt.plot(points[:,0], points[:,1], "k")
+
+    centroid = np.sum(points[:-1], axis=0) / 3
+    plt.plot([centroid[0]], centroid[1], "bo", label="Centroid")
+
+    midpoints = np.array([
+        (points[0] + points[1]) / 2,
+        (points[1] + points[2]) / 2,
+        (points[2] + points[0]) / 2,
+    ])
+
+    rot1 = np.array([
+        [0, -1],
+        [1, 0]
+    ])
+    rot2 = np.array([
+        [0, 1],
+        [-1, 0]
+    ])
+
+    n1 = points[1] - points[0]
+    n1 = np.matmul(rot2, n1) / np.sqrt(np.sum(n1 ** 2))
+    n2 = points[2] - points[1]
+    n2 = np.matmul(rot2, n2) / np.sqrt(np.sum(n2 ** 2))
+    n3 = points[0] - points[2]
+    n3 = np.matmul(rot2, n3) / np.sqrt(np.sum(n3 ** 2))
+
+    for i, n in enumerate([n1, n2, n3]):
+        plt.annotate(
+            s="",
+            xy=midpoints[i] + n,
+            xytext=midpoints[i],
+            xycoords="data",
+            arrowprops={"arrowstyle":"simple", "facecolor":"orange", "edgecolor":"orange", "lw":0.2},
+            annotation_clip=False,
+            zorder=-100
+        )
+
+    plt.annotate(s=r"$n_1$", xy=midpoints[0] + n1, xytext=midpoints[0] + n1 + np.array([0.05, 0.0]), color="orange", size=12)
+    plt.annotate(s=r"$n_2$", xy=midpoints[1] + n2, xytext=midpoints[1] + n2 + np.array([0.0, 0.0]), color="orange", size=12)
+    plt.annotate(s=r"$n_3$", xy=midpoints[2] + n3, xytext=midpoints[2] + n3 + np.array([0, 0.05]), color="orange", size=12, annotation_clip=False)
+
+    d1 = midpoints[1] - interpoint
+    d2 = midpoints[2] - interpoint
+    # plt.annotate(s=r"$d_1$", xy=midpoints[1], xytext=midpoints[1] - 0.5 * d1 + np.array([0.05, -0.1]), color="k", size=12)
+
+    p1 = -(d1[0] * n2[0] + d1[1] * n2[1]) * n2
+    p2 = -(d2[0] * n3[0] + d2[1] * n3[1]) * n3
+
+    plt.annotate(
+        s="",
+        xy=midpoints[1] + p1,
+        xytext=midpoints[1],
+        xycoords="data",
+        arrowprops={"arrowstyle":"simple", "facecolor":"red", "edgecolor":"red", "lw":0.2},
+        annotation_clip=False,
+        zorder=-90
     )
-    grid.map_lower(scatter_color)
-    grid.map_diag(lambda x, **kwargs: plt.colorbar())
+    plt.annotate(s=r"$x_2$", xy=midpoints[1], xytext=midpoints[1] + p1 + np.array([0.05, -0.1]), color="r", size=12)
+
+    plt.annotate(
+        s="",
+        xy=midpoints[2] + p2,
+        xytext=midpoints[2],
+        xycoords="data",
+        arrowprops={"arrowstyle":"simple", "facecolor":"red", "edgecolor":"red", "lw":0.2},
+        annotation_clip=False,
+        zorder=-90
+    )
+    plt.annotate(s=r"$x_3$", xy=midpoints[2], xytext=midpoints[2] + p2 + np.array([0.0, -0.2]), color="r", size=12)
+
+    plt.plot(
+        [midpoints[1,0], interpoint[0], midpoints[2,0]],
+        [midpoints[1,1], interpoint[1], midpoints[2,1]],
+        "k--",
+        lw=0.8
+    )
+
+    plt.plot(
+        [midpoints[1,0] + p1[0], interpoint[0], midpoints[2,0] + p2[0]],
+        [midpoints[1,1] + p1[1], interpoint[1], midpoints[2,1] + p2[1]],
+        "k:",
+        lw=0.8
+    )
+
+    plt.plot(midpoints[:,0], midpoints[:,1], "bo", label="Midpoints")
+    plt.annotate(s=r"$M_1$", xy=midpoints[0], xytext=midpoints[0] + np.array([-0.15, 0.1]), color="b", size=16)
+    plt.annotate(s=r"$M_2$", xy=midpoints[1], xytext=midpoints[1] + np.array([-0.2, -0.25]), color="b", size=16)
+    plt.annotate(s=r"$M_3$", xy=midpoints[2], xytext=midpoints[2] + np.array([0.1, -0.1]), color="b", size=16)
+    plt.plot([interpoint[0]], [interpoint[1]], "bP")
+
+    plt.gca().xaxis.set_ticklabels([])
+    plt.gca().yaxis.set_ticklabels([])
+    plt.gca().set_xticks([])
+    plt.gca().set_yticks([])
+    plt.axis("off")
+    plt.gca().set_aspect("equal")
+
     if show:
         plt.show()
     else:
-        grid.savefig("09_grid_err_dist." + FORMAT, transparent=True, bbox_inches="tight")
-
+        plt.savefig("13_dip_guide." + FORMAT, transparent=True, bbox_inches="tight")
     plt.close()
 
 
 
-    # if show:
-    #     plt.show()
-    # else:
-    #     plt.savefig("07_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
-    # plt.close()
+def plot_cooling_function_components(show=True):
+    # 1 T, 2 Ctot, 3 H, 4 He, 8 C, 9 N, 10 O, 28 Fe, 41 FF_H, 42 FF_M, 43 eeff, 45 Comp
+    data = np.loadtxt("../lingrid/lingrid.cool_by_element", usecols=(1, 2, 3, 4, 8, 9, 10, 28, 41, 42, 43, 45))
+
+    lw = 0.9
+    plt.plot(data[:,0], data[:,1], label=r"$\Lambda$", c="k")
+    plt.plot(data[:,0], data[:,2] + data[:,8], label=r"H", lw=lw)
+    plt.plot(data[:,0], data[:,3], label=r"He", lw=lw)
+    plt.plot(data[:,0], data[:,4], label=r"C", lw=lw)
+    plt.plot(data[:,0], data[:,5], label=r"N", lw=lw)
+    plt.plot(data[:,0], data[:,6], label=r"O", lw=lw)
+    plt.plot(data[:,0], data[:,7], label=r"Fe", lw=lw)
+    plt.plot(data[:,0], data[:,8], label=r"$\mathrm{FF}_\mathrm{H}$", ls="--", lw=lw)
+    # plt.plot(data[:,0], data[:,9], label=r"FF_M")
+    # plt.plot(data[:,0], data[:,10], label=r"ee_ff")
+    # plt.plot(data[:,0], data[:,11], label=r"Compton")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel(r"Temperature $T$ in K")
+    plt.ylabel(r"Cooling in $\frac{\mathrm{erg}}{\mathrm{cm}^3\mathrm{s}}$")
+    plt.ylim(1e-25)
+    plt.legend(loc="lower right", framealpha=1)
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("14_coolfct_components." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
+def plot_sample_distribution(show=True):
+    DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
+    data = pd.read_csv(DEL_DATA).sample(5000)
+
+    # sns.set_style("ticks")
+    grid = sns.pairplot(
+        data,
+        diag_kind="hist",
+        vars=["T", "nH", "old", "SFR"],
+        markers="o",
+        plot_kws={
+            "s":1,
+            "marker":"o",
+            "edgecolor":None
+        },
+        diag_kws={
+            "bins":50,
+            "lw":0
+        },
+        height=2.5
+    )
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("15_sample_distribution." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
 
 
 if __name__ == "__main__":
-    show = True
+    show = False
     # plot_mli_nonlinear(show=show)
     # plot_mli_cube(show=show)
-    plot_flips(show=show)
+    # plot_flips(show=show)
     # plot_delaunay_progression(show=show)
     # plot_bary_guide(show=show)
     # plot_complexities(show=show)
-    plot_cumsum(show=show)
+    # plot_cumsum(show=show, plot_errs=False)
+    # plot_flip_distribution(show=show)
+    # plot_cooling_function()
+    # plot_bary_plane(show)
+    # plot_sf_guide(show)
+    # plot_cooling_function_components(show)
+    plot_sample_distribution(show)

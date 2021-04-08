@@ -10,7 +10,7 @@ from scipy import spatial
 interp_loaded = np.loadtxt("ctest/interp", delimiter=" ")
 # tree_radius = np.loadtxt("ctest/tree", delimiter=" ", usecols=3)
 # ptree_radius = np.loadtxt("ctest/ptree", delimiter=" ", usecols=3)
-points = np.loadtxt("run41_complexity2/z3.0.points", delimiter=",", skiprows=1)
+points = np.loadtxt("run46_gadget_z0-9_heating/z0.0.points", delimiter=",", skiprows=1)
 ctris = np.loadtxt("run41_complexity2/z3.0.tris", delimiter=",").astype(int)
 PLOT_S_TREE = False
 PLOT_C_INTERP = False
@@ -73,10 +73,10 @@ if PLOT_P_INTERP:
         vals = np.clip(vals, CLIP_MIN, CLIP_MAX)
 
     plt.figure(figsize=(1.2*6, 6))
-    plt.triplot(points[:,0], points[:,1], triangles=tri.simplices, linewidth=0.5, color="r")
-    # plt.scatter(interp_coords[:,0], interp_coords[:,1], c=vals, s=2)
-    plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
-    # plt.colorbar()
+    # plt.triplot(points[:,0], points[:,1], triangles=tri.simplices, linewidth=0.5, color="r")
+    plt.scatter(interp_coords[:,0], interp_coords[:,1], c=vals, s=2)
+    # plt.scatter(points[:,0], points[:,1], color="k", s=4, zorder=1000)
+    plt.colorbar()
     plt.clim(vmin=-32, vmax=-13)
     plt.xlim(1, 9)
     plt.ylim(-5, 5)

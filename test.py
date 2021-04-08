@@ -11,6 +11,86 @@ import itertools
 from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from parse import parse
+import os
+
+data = pd.read_csv("/home/vetinari/CLionProjects/Master-Project-C-Part/cooldata3/z8.0.points")
+for column in data.columns:
+    print(column)
+    print(data[column].min(), data[column].max())
+
+tri = optimizer.build_and_save_delaunay(data, ["T", "nH", "SFR", "old"], "test")
+
+x = "SFR"
+y = "old"
+plt.plot(data[x], data[y], "k.")
+simp = tri.simplices[4804]
+print(simp)
+points = data.loc[simp]
+plt.plot(points[x], points[y], "r.")
+plt.plot([2.5], [6.5], "b.")
+plt.show()
+exit()
+
+
+cloudy_input = """CMB redshift 0
+table HM12 redshift 0
+metals -5 log
+hden 0
+constant temperature {T}
+stop zone 1
+iterate to convergence
+print last
+print short
+set save prefix "{fname}"
+save overview last ".overview"
+save cooling last ".cool"
+"""
+
+filenames = "T_{T}__nH_{nH}__Z_{Z}"
+filenames = "T_{T}"
+
+for T in [2.0, 2.1]: #np.linspace(2, 9, 71):
+    print(filenames.format(T=T))
+    with open(filenames.format(T=T) + ".in", "w") as file:
+        file.write(cloudy_input.format(fname=filenames.format(T=T), T=T))
+
+    os.system("cloudy/source/cloudy.exe -r " + filenames.format(T=T))
+    os.system(f"mv {filenames.format(T=T)}* coolfct/")
+
+
+
+# def sample(
+#         cloudy_input,
+#         cloudy_source_path,
+#         output_folder,
+#         param_space,
+#         param_space_margins,
+#
+#         rad_params=None,
+#         rad_params_margins=None,
+#
+#         existing_data=None, # TODO: Rename
+#         initial_grid=10,
+#
+#         filename_pattern=None,
+#
+#         dex_threshold=0.1,
+#         over_thresh_max_fraction=0.1,
+#         dex_max_allowed_diff=0.5,
+#
+#         random_samples_per_iteration=30,
+#
+#         n_jobs=4,
+#         n_partitions=10,
+#
+#         max_iterations=20,
+#         max_storage_gb=10,
+#         max_time=20,
+#
+#         plot_iterations=True
+# ):
+
+exit()
 
 points = pd.read_csv("run43_complexity4/z3.0.points")
 points = points[points["T"] >= 2]
