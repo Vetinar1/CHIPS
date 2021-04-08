@@ -1,6 +1,6 @@
 # CHIPS
 
-This is the Cloudy Heuristic Iterative Parameter Sampler, CHIPS for short.
+This is the Cloudy Heuristic Iterative Parameterspace Sampler, CHIPS for short.
 CHIPS is a python package that samples the cooling function for cosmological simulations.
 For more information on the cooling function and the goals of this package, refer to my master thesis (insert link to thesis here).
 
@@ -14,9 +14,11 @@ To install CHIPS, either download this repository and move the `chips` folder in
 
 TODO: Ensure that the whole egg business works.
 
-Make sure to have cloudy installed. What else?
-
 TODO: requirements txt
+
+Then, make sure you have a valid cloudy installation. Cloudy can be found here: https://gitlab.nublado.org/cloudy/cloudy/-/wikis/home
+
+Detailed installation instructions to install cloudy are available here: https://gitlab.nublado.org/cloudy/cloudy/-/wikis/StepByStep
 
 ## How does CHIPS work
 
@@ -33,6 +35,8 @@ Interpolation on the mesh is done using a [Delaunay triangulation](https://en.wi
 
 A working example can be found in the file FILENAME.
 
+### The `sample` function
+
 The main function to use is the `sample` function:
 
 ```python
@@ -44,7 +48,9 @@ Its most important parameters are as follows:
 
 `output_folder`: Where to put all the outputs and intermediary files. Folder must not exist.
 
-`output_filename`: How to call the output files.
+`output_filename`: How to name the output files.
+
+`cloudy_source_path`: Path to the `source` folder of your cloudy installation.
 
 `cloudy_input`: This needs to be either the path to a cloudy input file template, or a string containing such a template.
 A valid cloudy input file template is a cloudy file where all parameters of the parameter space have been replaced with
@@ -102,6 +108,7 @@ However, it is recommended you don't use it.
 `param_space_margins` must be a dict, with each key exactly matching each key from `param_space`.
 The values may be either floats or iterables. If they are floats, they are interpeted as fractions.
 E.g. if dimension X goes from 0 to 5, and the margin of X is 0.1, then the margins on each end will have a size of 0.5.
+The dimension *including* margins is then -0.5 to 5.5.
 If they are iterables, the extends of the margins are given directly. Example:
 
 ```
@@ -124,7 +131,7 @@ They are automatically scaled, overlaid, interpolated and added to the input fil
 Apart from the slightly different input method you can treat these like parameters.
 Again, the keys define the names of the parameters.
 However, the values must give the name of the input file containing the spectral component, the extents of the
-multipliers applied to these components, and whether the multiplications is supposed to happen in lin or log space.
+multipliers applied to these components, and whether the multiplication is supposed to happen in lin or log space.
 Example:
 
 ```
@@ -172,7 +179,7 @@ If the number of samples for which the error is `dex_threshold` or worse is smal
 the sampling is considered to be good enough and the algorithm stops.
 
 `dex_max_allowed_diff`: The maximum error any sample may have in its interpolation.
-Will *prevent* the algorithm from completing, even if the other two conditions are fulfilled. See thesis.
+Will *prevent* the algorithm from completing, even if the other two conditions are fulfilled. Use with care, see thesis.
 
 `max_iterations`: Will forcefully quit after this many iterations.
 
@@ -195,3 +202,18 @@ After the algorithm is done, you will get four output files:
 * `.fullpoints`, which contains all the samples *and* the samples from the margins. You shouldn't worry about this one.
 
 You can then use these for DIP. 
+
+
+### Other useful functions
+
+Here is a quick overview over other functions you may find useful.
+They are all contained in the `optimizer.py` or `util.py` files.
+Check their docstrings for thorough documentation.
+
+`load_existing_data`: Load all cooling data from a folder, including subfolders.
+Loads the actual `.cool` files, rather than the `.points` files. Returns a pandas dataframe.
+
+`build_and_save_delaunay`: Wrapper for building a triangulation on points contained in a dataframe, and saving the
+results into files.
+
+`poisson_disc_sampling`: Simple O(n^2) poisson disc sampling implementation.

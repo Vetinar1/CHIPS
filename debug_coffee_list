@@ -1,6 +1,0 @@
-# TODO: Always returns false
-# if not os.path.exists(os.path.join(cloudy_source_path, "cloudy.exe")):
-#     print(os.path.join(cloudy_source_path, "cloudy.exe"))
-#     raise RuntimeError("No cloudy.exe found at: " + str(cloudy_source_path))
-
-

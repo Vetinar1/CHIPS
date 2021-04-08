@@ -623,6 +623,7 @@ def sample(
     return points
 
 
+# TODO IMPORTANT update or remove
 def single_evaluation_step(
         points,
         param_space,
@@ -1232,16 +1233,6 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
 
 
     return points
-
-
-def sample_degenerate_simplices(points, coords):
-    """
-    Function that returns the centroids of simplices too degenerate for DIP.
-
-    :param points:
-    :param coords:
-    :return:
-    """
 
 
 def build_and_save_delaunay(points, coords, filename, sep=","):
