@@ -12,6 +12,72 @@ from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from parse import parse
 import os
+from chips.optimizer import _get_rad_bg_as_function, _f_nu_to_string
+
+cloudy = """CMB redshift 0
+table HM12 redshift 0
+metals 0 log
+hden {nH}
+constant temperature 5 vary
+grid 3.5 9 0.02 ncpus 80
+stop zone 1
+iterate to convergence
+print last
+print short
+set save prefix "{fname}"
+save overview last ".overview"
+save cooling last ".cool"
+"""
+
+with open("cloudy_0_HM12.in", "w") as f:
+    cloudy_out = cloudy.format(nH=0, fname="cloudy_1_HM12")
+    f.write(cloudy_out)
+
+with open("cloudy_-2_HM12.in", "w") as f:
+    cloudy_out = cloudy.format(nH=-2, fname="cloudy_-2_HM12")
+    f.write(cloudy_out)
+
+cloudy = """CMB redshift 0
+metals 0 log
+hden {nH}
+constant temperature 5 vary
+grid 3.5 9 0.02 ncpus 80
+stop zone 1
+iterate to convergence
+print last
+print short
+set save prefix "{fname}"
+save overview last ".overview"
+save cooling last ".cool"
+"""
+
+with open("cloudy_0_Told.in", "w") as f:
+    cloudy_out = cloudy.format(nH=0, fname="cloudy_0_Told")
+    radfct = _get_rad_bg_as_function({"old":("spectra/old", [-10, 10], "log")}, ".")
+    cloudy_out += _f_nu_to_string(radfct({"old":7.23}))
+    f.write(cloudy_out)
+
+with open("cloudy_-2_Told.in", "w") as f:
+    cloudy_out = cloudy.format(nH=-2, fname="cloudy_-2_Told")
+    radfct = _get_rad_bg_as_function({"old":("spectra/old", [-10, 10], "log")}, ".")
+    cloudy_out += _f_nu_to_string(radfct({"old":7.23}))
+    f.write(cloudy_out)
+
+with open("cloudy_0_TSFR.in", "w") as f:
+    cloudy_out = cloudy.format(nH=0, fname="cloudy_0_TSFR")
+    radfct = _get_rad_bg_as_function({"SFR":("spectra/SFR", [-10, 10], "log")}, ".")
+    cloudy_out += _f_nu_to_string(radfct({"SFR":-5.81}))
+    f.write(cloudy_out)
+
+with open("cloudy_-2_TSFR.in", "w") as f:
+    cloudy_out = cloudy.format(nH=-2, fname="cloudy_-2_TSFR")
+    radfct = _get_rad_bg_as_function({"SFR":("spectra/SFR", [-10, 10], "log")}, ".")
+    cloudy_out += _f_nu_to_string(radfct({"SFR":-5.81}))
+    f.write(cloudy_out)
+
+
+
+exit()
 
 data = pd.read_csv("/home/vetinari/CLionProjects/Master-Project-C-Part/cooldata3/z8.0.points")
 for column in data.columns:

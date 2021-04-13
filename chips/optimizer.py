@@ -118,8 +118,13 @@ def sample(
     cloudy_source_path = os.path.expanduser(cloudy_source_path)
     output_folder = os.path.expanduser(output_folder)
     if existing_data is not None:
-        for i in range(len(existing_data)):
-            existing_data[i] = os.path.expanduser(existing_data[i])
+        if type(existing_data) is str:
+            existing_data = os.path.expanduser(existing_data)
+        elif type(existing_data) is tuple or type(existing_data) is list:
+            for i in range(len(existing_data)):
+                existing_data[i] = os.path.expanduser(existing_data[i])
+        else:
+            raise RuntimeWarning(f"Invalid type for existingd data: {type(existing_data)}")
 
 
     # Set up Output folder

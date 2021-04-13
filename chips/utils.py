@@ -202,6 +202,8 @@ def poisson_disc_sampling(space, r, k=30):
     return out
 
 if __name__ == "__main__":
+    print(seconds_to_human_readable(21418))
+    exit()
     points = poisson_disc_sampling(
         np.array([[0, 1]] * 5),
         0.2,

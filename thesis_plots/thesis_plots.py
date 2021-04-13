@@ -6,10 +6,11 @@ from scipy import spatial, optimize
 import pandas as pd
 from scipy.interpolate import interpn
 from matplotlib.lines import Line2D
+from matplotlib.patches import Circle
 import seaborn as sns
 import scipy
 
-FORMAT = "png"
+FORMAT = "pdf"
 
 def plot_mli_cube(bg=True, az = -64, el = 20, show=True):
     cube = np.array([
@@ -471,11 +472,21 @@ def plot_cumsum(show=True, plot_errs=True):
     GRID_DATA = "../gasoline_header2_grid/grid_gasoline_header2.csv"
     RAND_DATA = "../gasoline_header2_random/random_gasoline_header2.csv"
     DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
+    # DEL_DATA = "../run55_run37_10k/z0.0.points"
     # DEL_DATA = "run39_gasoline_z0_header2_extended2/z0.0.points"
 
     gridpoints = pd.read_csv(GRID_DATA, delimiter=",")
     delpoints = pd.read_csv(DEL_DATA, delimiter=",")
     randpoints = pd.read_csv(RAND_DATA, delimiter=",")
+
+    # randpoints = randpoints.loc[(randpoints["T"] > 3.5) & (randpoints["T"] < 5)]
+    # randpoints = randpoints.loc[(randpoints["nH"] < -4)]
+
+    delpoints = delpoints.sample(15000)
+
+    print(gridpoints["T"].min(), gridpoints["T"].max())
+    print(delpoints["T"].min(), delpoints["T"].max())
+    print(randpoints["T"].min(), randpoints["T"].max())
 
     print("No. Gridpoints:", len(gridpoints.index))
     print("No. Randpoints:", len(randpoints.index))
@@ -559,7 +570,7 @@ def plot_cumsum(show=True, plot_errs=True):
 
     # Plotting
     plt.figure()
-    plt.title("Cumulative Sum of Errors")
+    plt.title(r"Cumulative Sum of Errors, $n_H < -4$")
     plt.axvline(delmedian, c="b", linestyle="--")
     plt.axvline(delavg, c="b", linestyle=":")
 
@@ -598,7 +609,7 @@ def plot_cumsum(show=True, plot_errs=True):
     if show:
         plt.show()
     else:
-        plt.savefig("07_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
+        plt.savefig("07b_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
     plt.close()
 
 
@@ -923,7 +934,6 @@ def plot_sf_guide(show=True):
     plt.close()
 
 
-
 def plot_cooling_function_components(show=True):
     # 1 T, 2 Ctot, 3 H, 4 He, 8 C, 9 N, 10 O, 28 Fe, 41 FF_H, 42 FF_M, 43 eeff, 45 Comp
     data = np.loadtxt("../lingrid/lingrid.cool_by_element", usecols=(1, 2, 3, 4, 8, 9, 10, 28, 41, 42, 43, 45))
@@ -983,18 +993,260 @@ def plot_sample_distribution(show=True):
     plt.close()
 
 
+def plot_radiation_fields(show=True):
+    HM12 = np.loadtxt("HM12.cont", usecols=(0, 1))
+
+    hPlanck = 6.626196e-27  # erg s
+    ryd = 2.1798723611e-11 # ergs
+
+    old = np.loadtxt("../spectra/old")
+    SFR = np.loadtxt("../spectra/SFR")
+    HM12[:,1] = HM12[:,1] / (HM12[:,0] * ryd / (hPlanck))
+    HM12[:,1] = HM12[:,1] / hPlanck
+    plt.plot(HM12[:,0], HM12[:,1], label=r"HM12 at $z = 0$")
+
+    norm_HM12 = np.argmin(np.abs(HM12[:,0] - 1))
+    norm_old = np.argmin(np.abs(old[:,0] - 1))
+    norm_SFR = np.argmin(np.abs(SFR[:,0] - 1))
+
+    old[:,1] = old[:,1] / hPlanck
+    SFR[:,1] = SFR[:,1] / hPlanck
+
+    T_old = HM12[norm_HM12,1] / old[norm_old,1]
+    T_SFR = HM12[norm_HM12,1] / SFR[norm_SFR,1]
+
+    plt.plot(old[:,0], T_old * old[:,1], label=r"$T_{old} = 10^{" + str(round(np.log10(T_old), 2)) + "}$")
+    plt.plot(SFR[:,0], T_SFR * SFR[:,1], label=r"$T_{SFR} = 10^{" + str(round(np.log10(T_SFR), 2)) + "}$")
+
+    plt.xscale("log")
+    plt.yscale("log")
+
+    plt.xlabel(r"$E$ in Ryd")
+    plt.ylabel(r"$4\pi J_\nu/h$ in $\frac{\mathrm{photons}}{\mathrm{s}\cdot\mathrm{cm}^2}$")
+    plt.legend()
+    plt.xlim(1e-4, 1e4)
+    plt.ylim(1e-4, 1e9)
+    plt.axvline(1, ls=":", c="k")
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("16_rad_fields." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+    HM12_0 = np.loadtxt("ch4fig2/cloudy_0_HM12.cool", usecols=(1, 3))
+    Told_0 = np.loadtxt("ch4fig2/cloudy_0_Told.cool", usecols=(1, 3))
+    TSFR_0 = np.loadtxt("ch4fig2/cloudy_0_TSFR.cool", usecols=(1, 3))
+    HM12_2 = np.loadtxt("ch4fig2/cloudy_-2_HM12.cool", usecols=(1, 3))
+    Told_2 = np.loadtxt("ch4fig2/cloudy_-2_Told.cool", usecols=(1, 3))
+    TSFR_2 = np.loadtxt("ch4fig2/cloudy_-2_TSFR.cool", usecols=(1, 3))
+
+    plt.plot(HM12_0[:,0], HM12_0[:,1], c="blue", label=r"HM12, $n_H = 1 {\rm cm}^{-3}$")
+    plt.plot(HM12_2[:,0], HM12_2[:,1], c="tab:blue", label=r"HM12, $n_H = 10^{-2} {\rm cm}^{-3}$")
+
+    plt.plot(Told_0[:,0], Told_0[:,1], c="tab:orange", label=r"$T_{\rm old}$, $n_H = 1 {\rm cm}^{-3}$")
+    plt.plot(Told_2[:,0], Told_2[:,1], c="orange", label=r"$T_{\rm old}$, $n_H = 10^{-2} {\rm cm}^{-3}$")
+
+    plt.plot(TSFR_0[:,0], TSFR_0[:,1], c="green", label=r"$T_{\rm SFR}$, $n_H = 1 {\rm cm}^{-3}$")
+    plt.plot(TSFR_2[:,0], TSFR_2[:,1], c="tab:green", label=r"$T_{\rm SFR}$, $n_H = 10^{-2} {\rm cm}^{-3}$")
+
+    plt.xlabel(r"$T$ in K")
+    plt.ylabel(r"$\Lambda$ in $\frac{\rm erg}{{\rm cm}^3 {\rm s}}$")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.legend()
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("16b_coolfcts." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
+def plot_edgeflip(show=True):
+    points = np.array([
+        [1, 1],
+        [3, 4],
+        [5, 1],
+        [6, 3],
+        [3, 2]
+    ])
+
+    plt.plot(points[:-1,0], points[:-1,1], "k")
+    plt.plot(
+        [points[3,0], points[1,0], points[0,0], points[2,0]],
+        [points[3,1], points[1,1], points[0,1], points[2,1]],
+        "k"
+    )
+    plt.plot(
+        [points[0,0], points[-1,0], points[1,0]],
+        [points[0,1], points[-1,1], points[1,1]],
+        "k--"
+    )
+    plt.plot(
+        [points[-1,0], points[2,0]],
+        [points[-1,1], points[2,1]],
+        "k--"
+    )
+    plt.plot(points[:-1,0], points[:-1,1], "ko")
+    plt.plot([points[-1,0]], [points[-1,1]], "rs")
+
+    plt.gca().add_patch(
+        Circle(
+            (4.75, 3),
+            np.sqrt(4.0625),
+            edgecolor="blue",
+            fill=False
+        )
+    )
+
+    plt.annotate(
+        s=r"A",
+        xy=points[3],
+        xytext=points[3] + np.array([0.15, 0.0]),
+        color="k",
+        size=16
+    )
+    plt.annotate(
+        s=r"P",
+        xy=points[-1],
+        xytext=points[-1] + np.array([0.15, 0.0]),
+        color="r",
+        size=16
+    )
+    plt.annotate(
+        s=r"x",
+        xy=0.5 * (points[1] + points[2]),
+        xytext=0.5 * (points[1] + points[2]) + np.array([0.1, 0.0]),
+        color="k",
+        size=16
+    )
+    plt.gca().set_aspect("equal")
+    plt.gca().xaxis.set_ticklabels([])
+    plt.gca().yaxis.set_ticklabels([])
+    plt.gca().set_xticks([])
+    plt.gca().set_yticks([])
+    plt.axis("off")
+
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("17a_edgeflip." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
+
+    plt.plot(
+        [points[3,0], points[1,0], points[0,0], points[2,0]],
+        [points[3,1], points[1,1], points[0,1], points[2,1]],
+        "k"
+    )
+    plt.plot(
+        [points[0,0], points[-1,0], points[1,0]],
+        [points[0,1], points[-1,1], points[1,1]],
+        "k"
+    )
+    plt.plot(
+        [points[-1,0], points[2,0]],
+        [points[-1,1], points[2,1]],
+        "k"
+    )
+    plt.plot(
+        [points[2,0], points[3,0]],
+        [points[2,1], points[3,1]],
+        "k"
+    )
+    plt.plot(
+        [points[2,0], points[1,0]],
+        [points[2,1], points[1,1]],
+        "grey",
+        lw=0.8
+    )
+    plt.plot(
+        [points[-1,0], points[3,0]],
+        [points[-1,1], points[3,1]],
+        "k--"
+    )
+    plt.plot(points[:-1,0], points[:-1,1], "ko")
+    plt.plot([points[-1,0]], [points[-1,1]], "rs")
+
+    plt.annotate(
+        s=r"A",
+        xy=points[3],
+        xytext=points[3] + np.array([0.15, 0.0]),
+        color="k",
+        size=16
+    )
+    plt.annotate(
+        s=r"P",
+        xy=points[-1],
+        xytext=points[-1] + np.array([0.1, 0.1]),
+        color="r",
+        size=16
+    )
+    plt.annotate(
+        s=r"x",
+        xy=0.5 * (points[1] + points[2]),
+        xytext=0.5 * (points[1] + points[2]) + np.array([-0.05, 0.2]),
+        color="grey",
+        size=16
+    )
+    plt.annotate(
+        s=r"y",
+        xy=0.5 * (points[-1] + points[3]),
+        xytext=0.5 * (points[-1] + points[3]) + np.array([0.0, -0.2]),
+        color="k",
+        size=16
+    )
+
+    plt.gca().add_patch(
+        Circle(
+            (4.33333333, 3),
+            np.sqrt(2.7777777777),
+            edgecolor="blue",
+            fill=False
+        )
+    )
+
+    plt.gca().add_patch(
+        Circle(
+            (4.5, 2.5),
+            np.sqrt(2.5),
+            edgecolor="blue",
+            fill=False
+        )
+    )
+
+
+    plt.gca().set_aspect("equal")
+    plt.gca().xaxis.set_ticklabels([])
+    plt.gca().yaxis.set_ticklabels([])
+    plt.gca().set_xticks([])
+    plt.gca().set_yticks([])
+    plt.axis("off")
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("17b_edgeflip." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
 if __name__ == "__main__":
-    show = False
+    show = True
     # plot_mli_nonlinear(show=show)
     # plot_mli_cube(show=show)
     # plot_flips(show=show)
     # plot_delaunay_progression(show=show)
     # plot_bary_guide(show=show)
     # plot_complexities(show=show)
-    # plot_cumsum(show=show, plot_errs=False)
+    plot_cumsum(show=show, plot_errs=False)
     # plot_flip_distribution(show=show)
     # plot_cooling_function()
     # plot_bary_plane(show)
     # plot_sf_guide(show)
     # plot_cooling_function_components(show)
-    plot_sample_distribution(show)
+    # plot_sample_distribution(show)
+    # plot_radiation_fields(show)
+    # plot_edgeflip(show)
