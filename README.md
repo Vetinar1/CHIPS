@@ -10,11 +10,12 @@ CHIPS is meant to be used in conjunction with DIP: https://github.com/Vetinar1/D
 
 To install CHIPS, either download this repository and move the `chips` folder into your project folder, or run the following command:
 
-`pip3 install git+https://github.com/Vetinar1/CHIPS#egg=CHIPS`
+`python -m pip install git+https://github.com/Vetinar1/CHIPS.git`
 
-TODO: Ensure that the whole egg business works.
+I recommend downloading/cloning the package manually, since you might want to look at the docstrings of the functions.
+In that case you can easily install the requirements using
 
-TODO: requirements txt
+`pip install requirements.txt`
 
 Then, make sure you have a valid cloudy installation. Cloudy can be found here: https://gitlab.nublado.org/cloudy/cloudy/-/wikis/home
 
