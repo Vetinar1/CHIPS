@@ -1,9 +1,8 @@
 from chips.optimizer import sample
-import numpy as np
-import sys
-import os
 
-# cloudy heuristic iterative parameter sampler
+############################################################################
+# Practical of how to use CHIPS - single run (use with Cool object in DIP) #
+############################################################################
 
 cloudy_input = """CMB redshift 0
 table HM12 redshift 0
@@ -24,18 +23,14 @@ out = sample(
     cloudy_input=cloudy_input,
     cloudy_source_path="cloudy/source",
     output_folder=out_folder,
-    output_filename=f"data",
+    output_filename=f"cooling",
     param_space={
         "T":[2, 9],
-        "nH":[-9, 4],
-        #"Z":[-2, 0],
-        #"z":[0, 2]
+        "nH":[-9, 4]
     },
     param_space_margins={
         "T":0.1,
-        "nH":0.1,
-        #"Z":0.1,
-        #"z":[0, 2.2]
+        "nH":0.1
     },
     rad_params={
         "hhT6":("spectra/hhT6", [17.5, 23.5], "log"),
@@ -47,18 +42,18 @@ out = sample(
     },
     existing_data=None,
     initial_grid=4,
-    perturbation_scale=1,
+    perturbation_scale=0.2,
     filename_pattern=None,
 
-    dex_threshold=1,
-    over_thresh_max_fraction=0.2,
-    dex_max_allowed_diff=3,
-    random_samples_per_iteration=500,
-    n_jobs=50,
+    dex_threshold=0.1,
+    over_thresh_max_fraction=0.1,
+    dex_max_allowed_diff=2,
+    random_samples_per_iteration=100,
+    n_jobs=60,
     n_partitions=10,
     max_iterations=50,
-    max_storage_gb=20,
-    max_time=0.05*3600,
+    max_storage_gb=2,
+    max_time=5*3600,
     plot_iterations=True,
 
     debug_plot_2d=False
