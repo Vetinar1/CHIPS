@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-   name="CHIPS",
+   name="chips",
    version="1.0",
    description="The Cloudy Heuristic/Iterative Parameterspace Sampler",
    author="Stefan Lueders",
