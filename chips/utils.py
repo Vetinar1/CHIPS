@@ -56,6 +56,9 @@ def seconds_to_human_readable(seconds):
     :param seconds:
     :return:
     """
+    if seconds is None:
+        return "None"
+    
     hours = (seconds - (seconds % 3600)) / 3600
     seconds_no_hours = seconds % 3600
     minutes = (seconds_no_hours - (seconds_no_hours % 60)) / 60

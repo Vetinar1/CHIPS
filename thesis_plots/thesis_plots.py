@@ -6,9 +6,12 @@ from scipy import spatial, optimize
 import pandas as pd
 from scipy.interpolate import interpn
 from matplotlib.lines import Line2D
-from matplotlib.patches import Circle
+from matplotlib.patches import Circle, Rectangle
 import seaborn as sns
 import scipy
+import pickle
+import matplotlib as mpl
+# from chips.optimizer import build_and_save_delaunay
 
 FORMAT = "pdf"
 
@@ -193,6 +196,10 @@ def plot_mli_nonlinear(stilts=False, show=True):
     ax.xaxis.set_ticklabels([])
     ax.yaxis.set_ticklabels([])
     ax.zaxis.set_ticklabels([])
+
+    ax.set_xlabel(r"$x$")
+    ax.set_ylabel(r"$y$")
+    ax.set_zlabel(r"$f(x, y)$")
 
     if show:
         plt.show()
@@ -410,10 +417,10 @@ def plot_bary_guide(show=True):
     plot_and_annotate(4, 4.5)
 
     plt.plot([3], [2], "o", color="red")
-    plt.annotate(get_bary(3, 2), (3, 2), xytext=(3.5, 2 - 0.25), ha="center", fontsize=15)
+    plt.annotate(get_bary(3, 2), (3, 2), xytext=(3.5, 2 - 0.3), ha="center", fontsize=15)
 
     plt.plot([1], [1], "o", color="red")
-    plt.annotate(get_bary(1, 1), (1, 1), xytext=(1, 1 - 0.25), ha="center", fontsize=15)
+    plt.annotate(get_bary(1, 1), (1, 1), xytext=(1, 1 - 0.3), ha="center", fontsize=15)
 
     for p in points[:-1]:
         plt.plot()
@@ -432,8 +439,8 @@ def plot_bary_guide(show=True):
 
 
 def plot_complexities(show=True):
-    def exp(x, a):
-        return a * 2**x
+    def exp(x, a, b):
+        return a * np.exp(b*x)
 
     def cube(x, a, b):
         return a * x**3 + b
@@ -444,45 +451,266 @@ def plot_complexities(show=True):
     mesh4 = np.array([399, 395, 396, 392, 398, 396, 395, 396, 395, 396])
 
     grid2 = np.array([6.421, 5.373, 5.286, 5.445, 5.290, 5.296, 5.452, 5.287, 5.289, 5.290])
+    grid3 = np.array([11.904, 11.642, 11.561, 11.567, 11.709,
+                      11.634, 11.671, 11.652, 11.576, 11.634])
+    grid4 = np.array([26.761, 25.056, 25.229, 25.180, 24.288,
+                      26.882, 25.473, 25.201, 25.284, 25.229])
 
     p_mesh = [mesh2.mean(), mesh3.mean(), mesh4.mean()]
     std_mesh = [mesh2.std(), mesh3.std(), mesh4.std()]
 
-    m_opt, pcov = optimize.curve_fit(cube, [2, 3, 4], p_mesh)
+    p_grid = [grid2.mean(), grid3.mean(), grid4.mean()]
+    std_grid = [grid2.std(), grid3.std(), grid4.std()]
 
-    plt.errorbar([2, 3, 4], p_mesh, yerr=std_mesh)
+    m_opt, m_pcov = optimize.curve_fit(exp, [2, 3, 4], p_mesh)
+    g_opt, g_pcov = optimize.curve_fit(exp, [2, 3, 4], p_grid)
+
+    plt.figure(figsize=(4, 3.375))
+    plt.errorbar([2, 3, 4], p_mesh, yerr=std_mesh, label="Delaunay", c="tab:blue")
+    plt.errorbar([2, 3, 4], p_grid, yerr=std_grid, label="MLI", c="tab:orange")
     plt.plot(
         np.linspace(2, 4.1, 100),
-        cube(np.linspace(2, 4.1, 100), *m_opt)
+        exp(np.linspace(2, 4.1, 100), *m_opt),
+        c="tab:green"
     )
+    plt.plot(
+        np.linspace(2, 4.1, 100),
+        exp(np.linspace(2, 4.1, 100), *g_opt),
+        c="tab:red"
+    )
+
+    # plt.yscale("log")
 
     plt.gca().xaxis.set_ticklabels([2, 3, 4])
     # plt.gca().yaxis.set_ticklabels([])
     plt.gca().set_xticks([2, 3, 4])
     # plt.gca().set_yticks([])
+    plt.ylabel("Milliseconds")
+    plt.xlabel("Dimensions")
+
+    legend_elements = [
+        Line2D([0], [0], color="tab:blue", label=r"Delaunay Interpolation"),
+        Line2D([0], [0], color="tab:orange", label=r"Multilinear Interpolation"),
+        Line2D([0], [0], color="tab:green",
+               label=r"Fit: $" + str(round(m_opt[0], 2)) + r"e^{" + str(round(m_opt[1], 2)) + r" x}$"),
+        Line2D([0], [0], color="tab:red",
+               label=r"Fit: $" + str(round(g_opt[0], 2)) + r"e^{" + str(round(g_opt[1], 2)) + r" x}$"),
+    ]
+    plt.legend(handles=legend_elements)
 
     if show:
         plt.show()
     else:
-        plt.savefig("06_time_complexities." + FORMAT, transparent=True, bbox_inches="tight")
+        plt.savefig("06a_time_complexities." + FORMAT, transparent=True, bbox_inches="tight")
     plt.close()
 
 
-def plot_cumsum(show=True, plot_errs=True):
+    plt.figure(figsize=(4.5, 3.375))
+    plt.errorbar([2, 3, 4], p_mesh, yerr=std_mesh, label="Delaunay", c="tab:blue")
+    plt.errorbar([2, 3, 4], p_grid, yerr=std_grid, label="MLI", c="tab:orange")
+
+    plt.yscale("log")
+
+    plt.gca().xaxis.set_ticklabels([2, 3, 4])
+    # plt.gca().yaxis.set_ticklabels([])
+    plt.gca().set_xticks([2, 3, 4])
+    # plt.gca().set_yticks([])
+    plt.ylabel("Milliseconds")
+    plt.xlabel("Dimensions")
+    plt.legend()
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("06b_time_complexities." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
+
+def plot_cumsum_a(show=True, plot_errs=True):
     GRID_DATA = "../gasoline_header2_grid/grid_gasoline_header2.csv"
     RAND_DATA = "../gasoline_header2_random/random_gasoline_header2.csv"
     DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
     # DEL_DATA = "../run55_run37_10k/z0.0.points"
-    # DEL_DATA = "run39_gasoline_z0_header2_extended2/z0.0.points"
+    DEL_DATA2 = "../run39_gasoline_z0_header2_extended2/z0.0.points"
+
+    gridpoints = pd.read_csv(GRID_DATA, delimiter=",")
+    delpoints = pd.read_csv(DEL_DATA, delimiter=",")
+    bigdelpoints = pd.read_csv(DEL_DATA2, delimiter=",")
+    randpoints = pd.read_csv(RAND_DATA, delimiter=",")
+
+
+    # randpoints = randpoints.loc[(randpoints["T"] > 3.5) & (randpoints["T"] < 5)]
+    # randpoints = randpoints.loc[(randpoints["nH"] < -4)]
+
+    print(gridpoints["T"].min(), gridpoints["T"].max())
+    print(delpoints["T"].min(), delpoints["T"].max())
+    print(randpoints["T"].min(), randpoints["T"].max())
+
+    print("No. Gridpoints:", len(gridpoints.index))
+    print("No. Randpoints:", len(randpoints.index))
+    print("No. Delpoints:", len(delpoints.index))
+
+    # ensuring column order
+    gridpoints = gridpoints[["T", "nH", "SFR", "old", "values"]]
+    delpoints = delpoints[["T", "nH", "SFR", "old", "values"]]
+    randpoints = randpoints[["T", "nH", "SFR", "old", "values"]]
+
+    # the coordinates at which we will interpolate
+    interp_coords = randpoints.drop("values", axis=1).to_numpy()
+
+    # Delaunay interpolation
+    N = delpoints.shape[1]-1
+    tri = spatial.Delaunay(delpoints.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            delpoints.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del"] = vals
+    randpoints["diff_del"] = randpoints["values"] - randpoints["interp_del"]
+
+    # Delaunay interpolation
+    N = bigdelpoints.shape[1]-1
+    tri = spatial.Delaunay(bigdelpoints.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            bigdelpoints.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del5"] = vals
+    randpoints["diff_del5"] = randpoints["values"] - randpoints["interp_del5"]
+
+    delmaxdiff = np.max(np.abs(randpoints["diff_del"]))
+    delmedian = np.median(np.abs(randpoints["diff_del"]))
+    delavg = np.average(np.abs(randpoints["diff_del"]))
+
+
+    # Multilinear interpolation
+    # Transform from 2d dataframe into Nd array
+    arrpoints = gridpoints.copy()
+    for column in arrpoints.columns[:-1]:
+        colvals = np.sort(arrpoints[column].unique())
+        arrpoints[column] -= colvals[0]
+        colvals = np.sort(arrpoints[column].unique())
+        arrpoints[column] /= colvals[1]
+        arrpoints[column] = arrpoints[column].astype(int)
+
+    valgrid = np.empty(tuple(np.sort(gridpoints[column].unique()).shape[0] for column in gridpoints.columns[:-1]))
+    valgrid[:] = np.nan
+
+    for row in arrpoints.itertuples():
+        valgrid[row[1:-1]] = row[-1]
+
+    # Clamp
+    randpoints = randpoints.loc[randpoints["T"] >= 2]
+    randpoints = randpoints.loc[randpoints["T"] <= 9]
+    randpoints = randpoints.loc[randpoints["nH"] >= -9]
+    randpoints = randpoints.loc[randpoints["nH"] <= 4]
+    randpoints = randpoints.loc[randpoints["SFR"] >= -5]
+    randpoints = randpoints.loc[randpoints["SFR"] <= 3]
+    randpoints = randpoints.loc[randpoints["old"] >= 6]
+    randpoints = randpoints.loc[randpoints["old"] <= 12]
+
+    # interpolate
+    randpoints["interp_grid"] = interpn(
+        tuple(np.sort(gridpoints[column].unique()) for column in gridpoints.columns[:-1]),
+        valgrid,
+        randpoints[["T", "nH", "SFR", "old"]].to_numpy(),
+        method="linear"
+    )
+    randpoints["diff_grid"] = randpoints["values"] - randpoints["interp_grid"]
+
+    gridmaxdiff = np.max(np.abs(randpoints["diff_grid"]).dropna())
+    gridmedian = np.median(np.abs(randpoints["diff_grid"]).dropna())
+    gridavg = np.average(np.abs(randpoints["diff_grid"]).dropna())
+
+    # Plotting
+    plt.figure()
+    # plt.title(r"Cumulative Sum of Errors, $n_H < -4$")
+    # plt.title(r"Cumulative Sum of Errors")
+    plt.axvline(delmedian, c="b", linestyle="--")
+    plt.axvline(delavg, c="b", linestyle=":")
+
+    plt.axvline(gridmedian, c="orange", linestyle="--")
+    plt.axvline(gridavg, c="orange", linestyle=":")
+
+    plt.axhline(0.5, c="k", lw=0.5)
+
+    X7 = np.sort(randpoints["diff_del5"].abs().dropna())
+    plt.plot(X7, np.arange(X7.shape[0]) / X7.shape[0], label="Delaunay Mesh Interpolation", c="magenta", lw=0.5)
+    X3 = np.sort(randpoints["diff_del"].abs().dropna())
+    plt.plot(X3, np.arange(X3.shape[0]) / X3.shape[0], label="Delaunay Mesh Interpolation", c="b")
+    X2 = np.sort(randpoints["diff_grid"].abs().dropna())
+    plt.plot(X2, np.arange(X2.shape[0]) / X2.shape[0], label="Multilinear Grid Interpolation", c="orange")
+
+    legend_elements = [
+        Line2D([0], [0], color="b", label=r"Delaunay Mesh Interpolation, $N = " + str(len(delpoints.index)) + "$"),
+        Line2D([0], [0], color="magenta", lw=0.5, label=r"Delaunay Mesh Interpolation, $N = " + str(len(bigdelpoints.index)) + "$"),
+        Line2D([0], [0], color="orange", label=r"Multilinear Grid Interpolation, $N = " + str(len(gridpoints.index)) + "$"),
+        Line2D([0], [0], color="k", linestyle="--", label="Median"),
+        Line2D([0], [0], color="k", linestyle=":", label="Mean")
+    ]
+    plt.legend(handles=legend_elements)
+    plt.ylabel("Normalized cumulative sum")
+    plt.xlabel(r"$|\Lambda - \Lambda_{\mathrm{interpolated}}|$ in dex")
+    plt.xlim(-0.05, 0.5)
+
+    print("Delmedian\t", round(delmedian, 4))
+    print("Delavg\t\t", round(delavg, 4))
+    print("Gridmedian\t", round(gridmedian, 4))
+    print("Gridavg\t\t", round(gridavg, 4))
+    print("Delmedian / Gridmedian", round(delmedian / gridmedian, 4))
+    print("Delavg / Gridavg\t", round(delavg / gridavg, 4))
+    print("Gridmedian / Delmedian", round(gridmedian / delmedian, 4))
+    print("Gridavg / Delavg\t", round(gridavg / delavg, 4))
+    print("Delmaxerror\t", delmaxdiff)
+    print("Gridmaxerror\t", gridmaxdiff)
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("07a_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
+
+def plot_cumsum_b(show=True, plot_errs=True):
+    GRID_DATA = "../gasoline_header2_grid/grid_gasoline_header2.csv"
+    RAND_DATA = "../gasoline_header2_random/random_gasoline_header2.csv"
+    DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
 
     gridpoints = pd.read_csv(GRID_DATA, delimiter=",")
     delpoints = pd.read_csv(DEL_DATA, delimiter=",")
     randpoints = pd.read_csv(RAND_DATA, delimiter=",")
 
-    # randpoints = randpoints.loc[(randpoints["T"] > 3.5) & (randpoints["T"] < 5)]
-    # randpoints = randpoints.loc[(randpoints["nH"] < -4)]
-
-    delpoints = delpoints.sample(15000)
+    randpoints = randpoints.loc[(randpoints["nH"] < -4)]
 
     print(gridpoints["T"].min(), gridpoints["T"].max())
     print(delpoints["T"].min(), delpoints["T"].max())
@@ -570,7 +798,7 @@ def plot_cumsum(show=True, plot_errs=True):
 
     # Plotting
     plt.figure()
-    plt.title(r"Cumulative Sum of Errors, $n_H < -4$")
+    # plt.title(r"Cumulative Sum of Errors, $n_H < -4$")
     plt.axvline(delmedian, c="b", linestyle="--")
     plt.axvline(delavg, c="b", linestyle=":")
 
@@ -614,6 +842,264 @@ def plot_cumsum(show=True, plot_errs=True):
 
 
 
+def plot_cumsum_c(show=True, plot_errs=True):
+    GRID_DATA = "../gasoline_header2_grid/grid_gasoline_header2.csv"
+    RAND_DATA = "../gasoline_header2_random/random_gasoline_header2.csv"
+    DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
+    # DEL_DATA = "../run55_run37_10k/z0.0.points"
+    DEL_DATA2 = "../run39_gasoline_z0_header2_extended2/z0.0.points"
+
+    gridpoints = pd.read_csv(GRID_DATA, delimiter=",")
+    delpoints = pd.read_csv(DEL_DATA, delimiter=",")
+    bigdelpoints = pd.read_csv(DEL_DATA2, delimiter=",")
+    randpoints = pd.read_csv(RAND_DATA, delimiter=",")
+
+    # randpoints = randpoints.loc[(randpoints["T"] > 3.5) & (randpoints["T"] < 5)]
+    # randpoints = randpoints.loc[(randpoints["nH"] < -4)]
+
+    print(gridpoints["T"].min(), gridpoints["T"].max())
+    print(delpoints["T"].min(), delpoints["T"].max())
+    print(randpoints["T"].min(), randpoints["T"].max())
+
+    print("No. Gridpoints:", len(gridpoints.index))
+    print("No. Randpoints:", len(randpoints.index))
+    print("No. Delpoints:", len(delpoints.index))
+
+    # ensuring column order
+    gridpoints = gridpoints[["T", "nH", "SFR", "old", "values"]]
+    delpoints = delpoints[["T", "nH", "SFR", "old", "values"]]
+    randpoints = randpoints[["T", "nH", "SFR", "old", "values"]]
+
+    # the coordinates at which we will interpolate
+    interp_coords = randpoints.drop("values", axis=1).to_numpy()
+
+    # Delaunay interpolation
+    N = delpoints.shape[1]-1
+    tri = spatial.Delaunay(delpoints.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            delpoints.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del"] = vals
+    randpoints["diff_del"] = randpoints["values"] - randpoints["interp_del"]
+
+    delpoints2 = delpoints.sample(20000)
+    # Delaunay interpolation
+    N = delpoints2.shape[1]-1
+    tri = spatial.Delaunay(delpoints2.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            delpoints2.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del2"] = vals
+    randpoints["diff_del2"] = randpoints["values"] - randpoints["interp_del2"]
+
+    delpoints3 = delpoints.sample(15000)
+    # Delaunay interpolation
+    N = delpoints3.shape[1]-1
+    tri = spatial.Delaunay(delpoints3.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            delpoints3.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del3"] = vals
+    randpoints["diff_del3"] = randpoints["values"] - randpoints["interp_del3"]
+
+    delpoints4 = delpoints.sample(10000)
+    # Delaunay interpolation
+    N = delpoints4.shape[1]-1
+    tri = spatial.Delaunay(delpoints4.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            delpoints4.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del4"] = vals
+    randpoints["diff_del4"] = randpoints["values"] - randpoints["interp_del4"]
+
+    # Delaunay interpolation
+    N = bigdelpoints.shape[1]-1
+    tri = spatial.Delaunay(bigdelpoints.drop("values", axis=1).to_numpy())
+    simplex_indices = tri.find_simplex(interp_coords)
+    simplices = tri.simplices[simplex_indices]
+    transforms = tri.transform[simplex_indices]
+
+    bary = np.einsum(
+        "ijk,ik->ij",
+        transforms[:, :N, :N],
+        interp_coords - transforms[:, N, :]
+    )
+
+    weights = np.c_[bary, 1 - bary.sum(axis=1)]
+    vals = np.zeros(interp_coords.shape[0])
+    for i in range(interp_coords.shape[0]):
+        vals[i] = np.inner(
+            bigdelpoints.to_numpy()[simplices[i], -1],
+            weights[i]
+        )
+
+    randpoints["interp_del5"] = vals
+    randpoints["diff_del5"] = randpoints["values"] - randpoints["interp_del5"]
+
+    delmaxdiff = np.max(np.abs(randpoints["diff_del"]))
+    delmedian = np.median(np.abs(randpoints["diff_del"]))
+    delavg = np.average(np.abs(randpoints["diff_del"]))
+
+
+    # Multilinear interpolation
+    # Transform from 2d dataframe into Nd array
+    arrpoints = gridpoints.copy()
+    for column in arrpoints.columns[:-1]:
+        colvals = np.sort(arrpoints[column].unique())
+        arrpoints[column] -= colvals[0]
+        colvals = np.sort(arrpoints[column].unique())
+        arrpoints[column] /= colvals[1]
+        arrpoints[column] = arrpoints[column].astype(int)
+
+    valgrid = np.empty(tuple(np.sort(gridpoints[column].unique()).shape[0] for column in gridpoints.columns[:-1]))
+    valgrid[:] = np.nan
+
+    for row in arrpoints.itertuples():
+        valgrid[row[1:-1]] = row[-1]
+
+    # Clamp
+    randpoints = randpoints.loc[randpoints["T"] >= 2]
+    randpoints = randpoints.loc[randpoints["T"] <= 9]
+    randpoints = randpoints.loc[randpoints["nH"] >= -9]
+    randpoints = randpoints.loc[randpoints["nH"] <= 4]
+    randpoints = randpoints.loc[randpoints["SFR"] >= -5]
+    randpoints = randpoints.loc[randpoints["SFR"] <= 3]
+    randpoints = randpoints.loc[randpoints["old"] >= 6]
+    randpoints = randpoints.loc[randpoints["old"] <= 12]
+
+    # interpolate
+    randpoints["interp_grid"] = interpn(
+        tuple(np.sort(gridpoints[column].unique()) for column in gridpoints.columns[:-1]),
+        valgrid,
+        randpoints[["T", "nH", "SFR", "old"]].to_numpy(),
+        method="linear"
+    )
+    randpoints["diff_grid"] = randpoints["values"] - randpoints["interp_grid"]
+
+    gridmaxdiff = np.max(np.abs(randpoints["diff_grid"]).dropna())
+    gridmedian = np.median(np.abs(randpoints["diff_grid"]).dropna())
+    gridavg = np.average(np.abs(randpoints["diff_grid"]).dropna())
+
+    # Plotting
+    plt.figure()
+    # plt.title(r"Cumulative Sum of Errors, $n_H < -4$")
+    # plt.title(r"Cumulative Sum of Errors")
+    # plt.axvline(delmedian, c="b", linestyle="--")
+    # plt.axvline(delavg, c="b", linestyle=":")
+
+    # plt.axvline(gridmedian, c="orange", linestyle="--")
+    # plt.axvline(gridavg, c="orange", linestyle=":")
+
+    plt.axhline(0.5, c="k", lw=0.5)
+
+    lw = 0.8
+    X7 = np.sort(randpoints["diff_del5"].abs().dropna())
+    plt.plot(X7, np.arange(X7.shape[0]) / X7.shape[0], c="magenta", label="Delaunay Mesh Interpolation", lw=lw)
+    X6 = np.sort(randpoints["diff_del4"].abs().dropna())
+    plt.plot(X6, np.arange(X6.shape[0]) / X6.shape[0], c="tab:green", label="Delaunay Mesh Interpolation", lw=lw)
+    X5 = np.sort(randpoints["diff_del3"].abs().dropna())
+    plt.plot(X5, np.arange(X5.shape[0]) / X5.shape[0], c="tab:red", label="Delaunay Mesh Interpolation", lw=lw)
+    X4 = np.sort(randpoints["diff_del2"].abs().dropna())
+    plt.plot(X4, np.arange(X4.shape[0]) / X4.shape[0], c="tab:purple", label="Delaunay Mesh Interpolation", lw=lw)
+    X3 = np.sort(randpoints["diff_del"].abs().dropna())
+    plt.plot(X3, np.arange(X3.shape[0]) / X3.shape[0], label="Delaunay Mesh Interpolation", c="b")
+    X2 = np.sort(randpoints["diff_grid"].abs().dropna())
+    plt.plot(X2, np.arange(X2.shape[0]) / X2.shape[0], label="Multilinear Grid Interpolation", c="orange")
+
+    legend_elements = [
+        Line2D([0], [0], color="magenta", label="DI, $N = " + str(len(bigdelpoints.index)) + "$", lw=lw),
+        Line2D([0], [0], color="b", label="DI, $N = " + str(len(delpoints.index)) + "$"),
+        Line2D([0], [0], color="tab:purple", label="DI, $N = " + str(len(delpoints2.index)) + "$", lw=lw),
+        Line2D([0], [0], color="tab:red", label="DI, $N = " + str(len(delpoints3.index)) + "$", lw=lw),
+        Line2D([0], [0], color="tab:green", label="DI, $N = " + str(len(delpoints4.index)) + "$", lw=lw),
+        Line2D([0], [0], color="orange", label=r"MLI, $N = " + str(len(gridpoints.index)) + "$"),
+        # Line2D([0], [0], color="k", linestyle="--", label="Median"),
+        # Line2D([0], [0], color="k", linestyle=":", label="Mean")
+    ]
+    plt.legend(handles=legend_elements)
+    plt.ylabel("Normalized cumulative sum")
+    plt.xlabel(r"$|\Lambda - \Lambda_{\mathrm{interpolated}}|$ in dex")
+    plt.xlim(-0.05, 0.5)
+
+    print("Delmedian\t", round(delmedian, 4))
+    print("Delavg\t\t", round(delavg, 4))
+    print("Gridmedian\t", round(gridmedian, 4))
+    print("Gridavg\t\t", round(gridavg, 4))
+    print("Delmedian / Gridmedian", round(delmedian / gridmedian, 4))
+    print("Delavg / Gridavg\t", round(delavg / gridavg, 4))
+    print("Gridmedian / Delmedian", round(gridmedian / delmedian, 4))
+    print("Gridavg / Delavg\t", round(gridavg / delavg, 4))
+    print("Delmaxerror\t", delmaxdiff)
+    print("Gridmaxerror\t", gridmaxdiff)
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("07c_cumsum." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
+
 def plot_flip_distribution(show=True):
     dist2 = []
 
@@ -643,12 +1129,26 @@ def plot_flip_distribution(show=True):
                 if flips >= 0 and flips >= 0:
                     dist4.append(flips)
 
-    plt.hist(dist2, bins=np.linspace(-0.5, 10.5, 12))
+    figsize = (3, 2.625)
+    plt.figure(figsize=figsize)
+    plt.hist(dist2, bins=np.linspace(-0.5, 10.5, 12), density=False)
     plt.xlabel("Number of flips")
     plt.ylabel("Count")
-    plt.title("2D")
+    # plt.title("2D")
     plt.xticks(np.linspace(0, 10, 11))
     plt.ylim(0, 6000)
+    hist, edges = np.histogram(dist2, bins=np.linspace(-0.5, 10.5, 12), density=False)
+    # l = hist.mean()
+    l = np.array(dist2).mean()
+    print(hist, l)
+    # poisson = [(l ** k) * np.exp(-l) / scipy.special.factorial(k) for k in range(len(hist))]
+    # plt.plot(list(range(len(hist))), poisson, label=r"$\lambda = " + str(round(l, 2)) + "$")
+    poisson = np.linspace(0, 10, 100)
+    poisson = np.power(l, poisson) * np.exp(-l) / scipy.special.factorial(poisson)
+    # plt.plot(np.linspace(0, 10, 100), poisson, label=r"$\lambda = " + str(round(l, 2)) + "$")
+    # plt.legend()
+    # print(hist)
+    # plt.plot(np.linspace(0, 10), scipy.stats.poisson.pmf(np.linspace(0, 10), hist.mean()))
     if show:
         plt.show()
     else:
@@ -656,12 +1156,20 @@ def plot_flip_distribution(show=True):
 
     plt.close()
 
-    plt.hist(dist3, bins=np.linspace(-0.5, 10.5, 12))
+    plt.figure(figsize=figsize)
+    plt.hist(dist3, bins=np.linspace(-0.5, 10.5, 12), density=False)
     plt.xlabel("Number of flips")
     plt.ylabel("Count")
-    plt.title("3D")
+    # plt.title("3D")
     plt.xticks(np.linspace(0, 10, 11))
     plt.ylim(0, 6000)
+    hist3, edges = np.histogram(dist3, bins=np.linspace(-0.5, 10.5, 12), density=False)
+    l3 = np.array(dist3).mean()
+    print(hist3, l3)
+    poisson = np.linspace(0, 10, 100)
+    poisson = np.power(l3, poisson) * np.exp(-l3) / scipy.special.factorial(poisson)
+    # plt.plot(np.linspace(0, 10, 100), poisson, label=r"$\lambda = " + str(round(l3, 2)) + "$")
+    # plt.legend()
     if show:
         plt.show()
     else:
@@ -669,12 +1177,21 @@ def plot_flip_distribution(show=True):
 
     plt.close()
 
-    plt.hist(dist4, bins=np.linspace(-0.5, 10.5, 12))
+    plt.figure(figsize=figsize)
+    plt.hist(dist4, bins=np.linspace(-0.5, 10.5, 12), density=False)
     plt.xlabel("Number of flips")
     plt.ylabel("Count")
-    plt.title("4D")
+    # plt.title("4D")
     plt.xticks(np.linspace(0, 10, 11))
     plt.ylim(0, 6000)
+
+    hist4, edges = np.histogram(dist4, bins=np.linspace(-0.5, 10.5, 12), density=False)
+    l4 = np.array(dist4).mean()
+    print(hist4, l4, hist4.mean())
+    poisson = np.linspace(0, 10, 100)
+    poisson = np.power(l4, poisson) * np.exp(-l4) / scipy.special.factorial(poisson)
+    # plt.plot(np.linspace(0, 10, 100), poisson, label=r"$\lambda = " + str(round(l4, 2)) + "$")
+    # plt.legend()
     if show:
         plt.show()
     else:
@@ -939,6 +1456,8 @@ def plot_cooling_function_components(show=True):
     data = np.loadtxt("../lingrid/lingrid.cool_by_element", usecols=(1, 2, 3, 4, 8, 9, 10, 28, 41, 42, 43, 45))
 
     lw = 0.9
+    # plt.figure(figsize=(6, 4.5))
+    # print(plt.gcf().get_size_inches())
     plt.plot(data[:,0], data[:,1], label=r"$\Lambda$", c="k")
     plt.plot(data[:,0], data[:,2] + data[:,8], label=r"H", lw=lw)
     plt.plot(data[:,0], data[:,3], label=r"He", lw=lw)
@@ -953,7 +1472,7 @@ def plot_cooling_function_components(show=True):
     plt.xscale("log")
     plt.yscale("log")
     plt.xlabel(r"Temperature $T$ in K")
-    plt.ylabel(r"Cooling in $\frac{\mathrm{erg}}{\mathrm{cm}^3\mathrm{s}}$")
+    plt.ylabel(r"Cooling $\Lambda$ in $\frac{\mathrm{erg}}{\mathrm{cm}^3\mathrm{s}}$")
     plt.ylim(1e-25)
     plt.legend(loc="lower right", framealpha=1)
 
@@ -966,7 +1485,16 @@ def plot_cooling_function_components(show=True):
 
 def plot_sample_distribution(show=True):
     DEL_DATA = "../run37_gasoline_z0_header2/z0.0.points"
-    data = pd.read_csv(DEL_DATA).sample(5000)
+    data = pd.read_csv(DEL_DATA).sample(4000)
+
+    data = data.loc[data["T"] >= 2]
+    data = data.loc[data["T"] <= 9]
+    data = data.loc[data["nH"] >= -9]
+    data = data.loc[data["nH"] <= 4]
+    data = data.loc[data["SFR"] >= -5]
+    data = data.loc[data["SFR"] <= 3]
+    data = data.loc[data["old"] >= 6]
+    data = data.loc[data["old"] <= 12]
 
     # sns.set_style("ticks")
     grid = sns.pairplot(
@@ -983,8 +1511,24 @@ def plot_sample_distribution(show=True):
             "bins":50,
             "lw":0
         },
-        height=2.5
+        corner=True,
+        height=2
     )
+
+
+    grid.axes[1, 0].set_ylabel(r"$\log (n_H)$")
+    grid.axes[2, 0].set_ylabel(r"$\log (\Phi_{\rm old})$")
+    grid.axes[3, 0].set_ylabel(r"$\log (\Phi_{\rm SFR})$")
+    grid.axes[3, 0].set_xlabel(r"$\log (T)$")
+    grid.axes[3, 1].set_xlabel(r"$\log (n_H)$")
+    grid.axes[3, 2].set_xlabel(r"$\log (\Phi_{\rm old})$")
+    grid.axes[3, 3].set_xlabel(r"$\log (\Phi_{\rm SFR})$")
+
+    grid.axes[1, 0].set_yticks([-8, -4, 0, 4])
+    grid.axes[3, 1].set_xticks([-8, -4, 0, 4])
+    grid.axes[3, 0].set_xticks([2, 4, 6, 8])
+    grid.axes[3, 2].set_xticks([6, 8, 10, 12])
+    grid.axes[3, 3].set_xticks([-4, -2, 0, 2])
 
     if show:
         plt.show()
@@ -995,6 +1539,7 @@ def plot_sample_distribution(show=True):
 
 def plot_radiation_fields(show=True):
     HM12 = np.loadtxt("HM12.cont", usecols=(0, 1))
+    CMB = np.loadtxt("CMB.cont", usecols=(0, 1))
 
     hPlanck = 6.626196e-27  # erg s
     ryd = 2.1798723611e-11 # ergs
@@ -1003,7 +1548,10 @@ def plot_radiation_fields(show=True):
     SFR = np.loadtxt("../spectra/SFR")
     HM12[:,1] = HM12[:,1] / (HM12[:,0] * ryd / (hPlanck))
     HM12[:,1] = HM12[:,1] / hPlanck
+    CMB[:,1] = CMB[:,1] / (CMB[:,0] * ryd / (hPlanck))
+    CMB[:,1] = CMB[:,1] / hPlanck
     plt.plot(HM12[:,0], HM12[:,1], label=r"HM12 at $z = 0$")
+    plt.plot(CMB[:,0], CMB[:,1], label=r"CMB at $z = 0$")
 
     norm_HM12 = np.argmin(np.abs(HM12[:,0] - 1))
     norm_old = np.argmin(np.abs(old[:,0] - 1))
@@ -1015,17 +1563,18 @@ def plot_radiation_fields(show=True):
     T_old = HM12[norm_HM12,1] / old[norm_old,1]
     T_SFR = HM12[norm_HM12,1] / SFR[norm_SFR,1]
 
-    plt.plot(old[:,0], T_old * old[:,1], label=r"$T_{old} = 10^{" + str(round(np.log10(T_old), 2)) + "}$")
-    plt.plot(SFR[:,0], T_SFR * SFR[:,1], label=r"$T_{SFR} = 10^{" + str(round(np.log10(T_SFR), 2)) + "}$")
+    plt.plot(old[:,0], T_old * old[:,1], label=r"$\Phi_{\rm old} = 10^{" + str(round(np.log10(T_old), 2)) + "}$")
+    plt.plot(SFR[:,0], T_SFR * SFR[:,1], label=r"$\Phi_{\rm SFR} = 10^{" + str(round(np.log10(T_SFR), 2)) + "}$")
 
     plt.xscale("log")
     plt.yscale("log")
+    print(plt.gcf().get_size_inches())
 
     plt.xlabel(r"$E$ in Ryd")
     plt.ylabel(r"$4\pi J_\nu/h$ in $\frac{\mathrm{photons}}{\mathrm{s}\cdot\mathrm{cm}^2}$")
     plt.legend()
-    plt.xlim(1e-4, 1e4)
-    plt.ylim(1e-4, 1e9)
+    plt.xlim(1e-6, 1e4)
+    plt.ylim(1e-4, 1e14)
     plt.axvline(1, ls=":", c="k")
 
     if show:
@@ -1033,6 +1582,8 @@ def plot_radiation_fields(show=True):
     else:
         plt.savefig("16_rad_fields." + FORMAT, transparent=True, bbox_inches="tight")
     plt.close()
+
+    return
 
     HM12_0 = np.loadtxt("ch4fig2/cloudy_0_HM12.cool", usecols=(1, 3))
     Told_0 = np.loadtxt("ch4fig2/cloudy_0_Told.cool", usecols=(1, 3))
@@ -1233,16 +1784,93 @@ def plot_edgeflip(show=True):
     plt.close()
 
 
+def plot_buffer_and_margins(show=True):
+
+    fig = plt.figure()
+
+    plt.xlim(0, 10)
+    plt.ylim(0, 10)
+    plt.gca().add_patch(
+        Rectangle(
+            (1, 1),
+            width=8,
+            height=8,
+            edgecolor="red",
+            fill=True,
+            facecolor="mistyrose",
+            lw=2
+        )
+    )
+    plt.gca().add_patch(
+        Rectangle(
+            (1.5, 1.5),
+            width=7,
+            height=7,
+            edgecolor="orange",
+            fill=True,
+            facecolor="antiquewhite",
+            lw=2
+        )
+    )
+    plt.gca().add_patch(
+        Rectangle(
+            (2, 2),
+            width=6,
+            height=6,
+            edgecolor="blue",
+            fill=True,
+            facecolor="aliceblue",
+            lw=2
+        )
+    )
+    plt.annotate(
+        s=r"Margins",
+        xy=[2, 9],
+        xytext=[2, 9.1],
+        color="red",
+        size=10
+    )
+    plt.annotate(
+        s=r"Buffer",
+        xy=[2.5, 8.5],
+        xytext=[2.5, 8.6],
+        color="orange",
+        size=10
+    )
+    plt.annotate(
+        s=r"Parameter space",
+        xy=[3, 8],
+        xytext=[3, 8.1],
+        color="blue",
+        size=10
+    )
+
+
+    plt.gca().xaxis.set_ticklabels([])
+    plt.gca().yaxis.set_ticklabels([])
+    plt.gca().set_xticks([])
+    plt.gca().set_yticks([])
+    plt.axis("off")
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig("18_margin_guide." + FORMAT, transparent=True, bbox_inches="tight")
+    plt.close()
+
+
 if __name__ == "__main__":
-    show = True
+    show = False
     # plot_mli_nonlinear(show=show)
     # plot_mli_cube(show=show)
     # plot_flips(show=show)
     # plot_delaunay_progression(show=show)
     # plot_bary_guide(show=show)
     # plot_complexities(show=show)
-    plot_cumsum(show=show, plot_errs=False)
-    # plot_flip_distribution(show=show)
+    # plot_cumsum_a(show=show, plot_errs=False)
+    # plot_cumsum_b(show=show, plot_errs=False)
+    # plot_cumsum_c(show=show, plot_errs=False)
+    plot_flip_distribution(show=show)
     # plot_cooling_function()
     # plot_bary_plane(show)
     # plot_sf_guide(show)
@@ -1250,3 +1878,4 @@ if __name__ == "__main__":
     # plot_sample_distribution(show)
     # plot_radiation_fields(show)
     # plot_edgeflip(show)
+    # plot_buffer_and_margins(show)
