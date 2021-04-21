@@ -1,8 +1,8 @@
 from chips.optimizer import sample
 
-############################################################################
-# Practical of how to use CHIPS - single run (use with Cool object in DIP) #
-############################################################################
+####################################################################################
+# Practical example of how to use CHIPS - single run (use with Cool object in DIP) #
+####################################################################################
 
 cloudy_input = """CMB redshift 0
 table HM12 redshift 0
@@ -18,11 +18,11 @@ save overview last ".overview"
 save cooling last ".cool"
 """
 
-out_folder = "output"
+
 out = sample(
     cloudy_input=cloudy_input,
     cloudy_source_path="cloudy/source",
-    output_folder=out_folder,
+    output_folder="example1_output/",
     output_filename=f"cooling",
     param_space={
         "T":[2, 9],
@@ -42,19 +42,15 @@ out = sample(
     },
     existing_data=None,
     initial_grid=4,
-    perturbation_scale=0.2,
-    filename_pattern=None,
-
-    dex_threshold=0.1,
-    over_thresh_max_fraction=0.1,
-    dex_max_allowed_diff=2,
+    poisson_disc_scale=0.2,
+    accuracy_threshold=0.1,
+    error_fraction=0.1,
+    max_error=2,
     random_samples_per_iteration=100,
     n_jobs=60,
     n_partitions=10,
-    max_iterations=50,
+    max_iterations=30,
     max_storage_gb=2,
-    max_time=5*3600,
+    max_time=1*3600,
     plot_iterations=True,
-
-    debug_plot_2d=False
 )

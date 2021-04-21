@@ -21,8 +21,6 @@ def get_folder_size(folder):
     Returns size of folder in bytes. Does not consider subdirectories, links, etc.
     https://stackoverflow.com/a/1392549
 
-    TODO: Consider subdirectories
-
     :param folder:
     :return:
     """
@@ -203,32 +201,3 @@ def poisson_disc_sampling(space, r, k=30):
             break
 
     return out
-
-if __name__ == "__main__":
-    print(seconds_to_human_readable(21418))
-    exit()
-    points = poisson_disc_sampling(
-        np.array([[0, 1]] * 5),
-        0.2,
-        k=30
-    )
-
-    print(points.shape)
-
-    import matplotlib.pyplot as plt
-    plt.plot(points[:,0], points[:,1], "ko")
-    plt.gca().set_aspect(1)
-    plt.show()
-    exit()
-
-    points = pd.DataFrame(points)
-    print(len(points.index))
-
-    grid = sns.pairplot(
-        points,
-        diag_kind="hist",
-        height=6
-    )
-
-    grid.savefig("test.png")
-
