@@ -2,7 +2,7 @@
 
 This is the Cloudy Heuristic Iterative Parameterspace Sampler, CHIPS for short.
 CHIPS is a python package that samples the cooling function for cosmological simulations.
-For more information on the cooling function and the goals of this package, refer to my master thesis (insert link to thesis here).
+For more information on the cooling function and the goals of this package, refer to my master thesis (included in the repository).
 
 CHIPS is meant to be used in conjunction with DIP: https://github.com/Vetinar1/DIP
 
