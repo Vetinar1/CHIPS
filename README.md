@@ -34,7 +34,7 @@ Interpolation on the mesh is done using a [Delaunay triangulation](https://en.wi
 
 ## How to use CHIPS
 
-A working example can be found in the file FILENAME.
+Working examples can be found in the two example files.
 
 ### The `sample` function
 
@@ -162,8 +162,7 @@ subdirectories.
 `initial_grid`:  Related to margins, number of grid points to use for outer hull.
 Must be two or larger. Should be four or five. Greater values probably don't lead to increased benefits.
 
-`perturbation_scale`: TODO RENAME THIS ARGUMENT
-Related to initial sampling. The minimum distance to use for the poisson disc sampling.
+`poisson_disc_scale`: Related to initial sampling. The minimum distance to use for the poisson disc sampling.
 The number of points you can expect is about `1/r^d` or less (r is the distance, d is the number of dimensions).
 
 `random_samples_per_iteration`: How many uniformly distributed random samples to add in each iteration.
