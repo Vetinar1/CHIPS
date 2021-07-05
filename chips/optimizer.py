@@ -11,7 +11,8 @@ from matplotlib import patches
 
 sns.set()
 
-# TODO Multiple outputs
+# TODO Figure out how to consolidate the hydrogen fractions
+# TODO Add option for net cooling!
 
 def sample(
         cloudy_input,
@@ -610,14 +611,28 @@ def sample(
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     if save_fractions:
-        print("save_fractions == true, re-reading data and saving with ne and nH. This may take a while")
-        points = load_existing_raw_data(output_folder, filename_pattern, coord_list, interp_column)
-        # drop margins
-        for coord in core.items():
-            points = points[points[coord[0]] >= coord[1][0]]
-            points = points[points[coord[0]] <= coord[1][1]]
+        print("save_fractions == true, Loading and merging hydrogen and electron fractions")
+        fracs = fracs = load_existing_raw_data(
+            output_folder,
+            filename_pattern,
+            coord_list,
+            [4, 5, 6, 7],
+            file_ending=".overview",
+            column_names=["ne", "H2", "HI", "HII"]
+        ).drop_duplicates()
 
-        points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
+        points = points.drop_duplicates()
+        merged = points.merge(
+            fracs,
+            "inner",
+            on=coord_list
+        )
+
+        merged.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
+
+        if len(points.index) != len(merged.index):
+            print("The length of the points table changed during the merge with the electron/hydrogen fractions.\n"
+                  "This is odd. You may want to double check the results and make sure the triangulation didnt break.")
 
     print("Done")
 
