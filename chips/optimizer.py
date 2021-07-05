@@ -39,6 +39,7 @@ def sample(
 
         interp_column=3,
         suppress_interp_column_warning=False,
+        save_fractions=False,
 
         n_jobs=4,
         n_partitions=10,
@@ -99,7 +100,8 @@ def sample(
     :param max_error:                       Largest interpolation error permitted.
     :param random_samples_per_iteration:    How many completely random samples to add each iteration
     :param interp_column:                   The column to read from .cool files for data. 3 = cooling, 2 = heating
-    :Param suppress_interp_column_warning:  Do not throw warning when attempting to read columns other than 2 or 3.
+    :param suppress_interp_column_warning:  Do not throw warning when attempting to read columns other than 2 or 3.
+    :param save_fractions:                  Save electron and hydrogen fractions to points file. For use with gadget.
     :param n_jobs:                          How many cloudy jobs to run in parallel
     :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
     :param max_iterations:                  Exit condition: Quit after this many iterations
@@ -277,7 +279,7 @@ def sample(
                 print("Attempting to recursively read raw data from folder", dpath)
                 points = pd.concat((
                     points,
-                    load_existing_raw_data(existing_data, filename_pattern, core, interp_column)
+                    load_existing_raw_data(existing_data, filename_pattern, coord_list, interp_column)
                 ))
             else:
                 raise RuntimeError(f"Error: {dpath} is not a valid file or folder")
@@ -607,6 +609,16 @@ def sample(
     np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
+    if save_fractions:
+        print("save_fractions == true, re-reading data and saving with ne and nH. This may take a while")
+        points = load_existing_raw_data(output_folder, filename_pattern, coord_list, interp_column)
+        # drop margins
+        for coord in core.items():
+            points = points[points[coord[0]] >= coord[1][0]]
+            points = points[points[coord[0]] <= coord[1][1]]
+
+        points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
+
     print("Done")
 
     return points
@@ -677,21 +689,20 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
 
 def _load_point(filename, filename_pattern, coordinates, column_index):
     """
-    Load Ctot from the given cloudy cooling output ("*.cool") file.
+    Load Ctot or Htot from the given cloudy cooling output ("*.cool") file. Applies log10 to the read values.
     Filename needs to contain the full path to the file.
 
     The filename pattern is used to parse the coordinates at which Ctot is given.
 
-    :param filename:
-    :param filename_pattern:
-    :param coordinates:
-    :param column_index:
+    :param filename:            file to load
+    :param filename_pattern:    how to parse filename -> coordinates
+    :param coordinates:         Coordinate list
+    :param column_index:        int or list
     :return:                    Dict
     """
     result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
     point = result.named
 
-    # TODO Currently implicitly iterates over keys, change to coord_list...
     for coordinate in coordinates:
         if coordinate not in list(point.keys()):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
@@ -704,12 +715,54 @@ def _load_point(filename, filename_pattern, coordinates, column_index):
         return None
 
 
-def load_existing_raw_data(folder, filename_pattern, coordinates, column_index):
+def _load_point_multiple_values(filename, filename_pattern, coordinates, columns):
+    """
+    Like _load_point, but loads multiple values and does not apply log10.
+
+    :param filename:
+    :param filename_pattern:
+    :param coordinates:
+    :param columns:             Dict. Keys are column names, values are column indices
+    :return:                    Dict
+    """
+    column_names = list(columns.keys())
+    column_indices = [columns[k] for k in column_names]
+
+    result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
+    point = result.named
+
+    for coordinate in coordinates:
+        if coordinate not in list(point.keys()):
+            raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
+
+    try:
+        vals = np.log10(float(np.loadtxt(filename, usecols=column_indices)))
+        for i in range(vals.shape[0]):
+            point[column_names[i]] = vals[i]
+
+        return point
+    except:
+        print("Could not read point from file", filename)
+        return None
+
+
+def load_existing_raw_data(
+        folder,
+        filename_pattern,
+        coordinates,
+        column_index,
+        file_ending=".cool",
+        column_names=None):
     """
     Loads Ctot from all files ending in .cool in the given folder and subfolders.
 
-    :param folder:
-    :return:            Dataframe of points
+    :param folder:              Folder to load from
+    :param filename_pattern:    How to parse filenames -> coordinates
+    :param coordinates:         Coordinate list
+    :param column_index:        int or list, columns to load
+    :param column_names:        list, name of columns. Has to be given if column_index is list. Otherwise ignored.
+    :param file_ending:         File ending of files to load.
+    :return:                    Dataframe of points
     """
     # Find all files in the specified folder (and subfolders)
     filenames = []
@@ -718,11 +771,24 @@ def load_existing_raw_data(folder, filename_pattern, coordinates, column_index):
 
     points = [] # list of dicts for DataFrame constructor
 
-    for filename in filenames:
-        if filename.endswith(".cool"):
-            point = _load_point(filename, filename_pattern, coordinates, column_index)
-            if point:
-                points.append(point)
+    if type(column_index == int):
+        for filename in filenames:
+            if filename.endswith(file_ending):
+                point = _load_point(filename, filename_pattern, coordinates, column_index)
+                if point:
+                    points.append(point)
+    elif type(column_index == list):
+        assert(type(column_names == list))
+        assert(len(column_names) == list(column_index))
+        columns = dict(zip(column_names, column_index))
+
+        for filename in filenames:
+            if filename.endswith(file_ending):
+                point = _load_point_multiple_values(filename, filename_pattern, coordinates, columns)
+                if point:
+                    points.append(point)
+    else:
+        raise TypeError(f"Invalid type for column_index: {type(column_index)}")
 
     points = pd.DataFrame(points).astype(float)
     return points
