@@ -736,9 +736,9 @@ def _load_point_multiple_values(filename, filename_pattern, coordinates, columns
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
     try:
-        vals = np.log10(float(np.loadtxt(filename, usecols=column_indices)))
+        vals = np.loadtxt(filename, usecols=column_indices)
         for i in range(vals.shape[0]):
-            point[column_names[i]] = vals[i]
+            point[column_names[i]] = float(vals[i])
 
         return point
     except:
@@ -771,13 +771,13 @@ def load_existing_raw_data(
 
     points = [] # list of dicts for DataFrame constructor
 
-    if type(column_index == int):
+    if type(column_index) == int:
         for filename in filenames:
             if filename.endswith(file_ending):
                 point = _load_point(filename, filename_pattern, coordinates, column_index)
                 if point:
                     points.append(point)
-    elif type(column_index == list):
+    elif type(column_index) == list:
         assert(type(column_names == list))
         assert(len(column_names) == list(column_index))
         columns = dict(zip(column_names, column_index))
