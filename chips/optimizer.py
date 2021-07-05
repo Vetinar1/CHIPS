@@ -11,6 +11,9 @@ from matplotlib import patches
 
 sns.set()
 
+# TODO Multiple outputs
+# TODO Better cooling/heating switch
+
 # 3 = cooling, 2 = heating
 COLUMN_INDEX = 3
 
