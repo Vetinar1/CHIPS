@@ -12,10 +12,6 @@ from matplotlib import patches
 sns.set()
 
 # TODO Multiple outputs
-# TODO Better cooling/heating switch
-
-# 3 = cooling, 2 = heating
-COLUMN_INDEX = 3
 
 def sample(
         cloudy_input,
@@ -40,6 +36,9 @@ def sample(
         max_error=0.5,
 
         random_samples_per_iteration=30,
+
+        interp_column=3,
+        suppress_interp_column_warning=False,
 
         n_jobs=4,
         n_partitions=10,
@@ -99,6 +98,8 @@ def sample(
                                             interpolationto be considered "good enough".
     :param max_error:                       Largest interpolation error permitted.
     :param random_samples_per_iteration:    How many completely random samples to add each iteration
+    :param interp_column:                   The column to read from .cool files for data. 3 = cooling, 2 = heating
+    :Param suppress_interp_column_warning:  Do not throw warning when attempting to read columns other than 2 or 3.
     :param n_jobs:                          How many cloudy jobs to run in parallel
     :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
     :param max_iterations:                  Exit condition: Quit after this many iterations
@@ -128,7 +129,7 @@ def sample(
             for i in range(len(existing_data)):
                 existing_data[i] = os.path.expanduser(existing_data[i])
         else:
-            raise RuntimeWarning(f"Invalid type for existingd data: {type(existing_data)}")
+            raise RuntimeWarning(f"Invalid type for existing data: {type(existing_data)}")
 
 
     # Set up Output folder
@@ -182,6 +183,14 @@ def sample(
     if cleanup not in [None, "outfiles", "full"]:
         raise RuntimeError(f"Invalid value for cleanup parameter: {cleanup}")
 
+    # Check if the column we are reading from the .cool file is valid
+    if not suppress_interp_column_warning:
+        if interp_column != 2 and interp_column != 3:
+            raise RuntimeWarning(f"interp_column is not 2 (heating) or 3 (cooling), but {interp_column}. "
+                                 "If you really wish to proceed, set suppress_interp_column_warning=True.")
+    else:
+        print("Interpolation column warning suppressed.")
+
     ####################################################################################################################
     ################################################    Diagnostics    #################################################
     ####################################################################################################################
@@ -203,6 +212,13 @@ def sample(
     print("Existing data".ljust(50) + str(existing_data))
     print("Points per dimension of initial grid ".ljust(50) + str(initial_grid))
     print("Filename pattern ".ljust(50) + str(filename_pattern))
+    print("Interpolation column ".ljust(50) + str(interp_column), sep=" ")
+    if interp_column == 2:
+        print("(heating)")
+    elif interp_column == 3:
+        print("(cooling)")
+    else:
+        print("(unknown)")
     print()
     print("Poisson disc sampling radius:".ljust(50) + str(poisson_disc_scale))
     print("Threshold (dex)".ljust(50) + str(accuracy_threshold))
@@ -261,7 +277,7 @@ def sample(
                 print("Attempting to recursively read raw data from folder", dpath)
                 points = pd.concat((
                     points,
-                    load_existing_raw_data(existing_data, filename_pattern, core)
+                    load_existing_raw_data(existing_data, filename_pattern, core, interp_column)
                 ))
             else:
                 raise RuntimeError(f"Error: {dpath} is not a valid file or folder")
@@ -292,13 +308,31 @@ def sample(
         os.mkdir(it0folder)
 
     # Corners are evaluated separately because they are used on their own later
-    corners = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, corners, rad_bg, n_jobs)
+    corners = _cloudy_evaluate(
+        cloudy_input,
+        cloudy_source_path,
+        it0folder,
+        filename_pattern,
+        corners,
+        rad_bg,
+        n_jobs,
+        interp_column
+    )
     points = pd.concat((points, corners), ignore_index=True)
 
     points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
     assert(not points.index.duplicated().any())
 
-    points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, points, rad_bg, n_jobs)
+    points  = _cloudy_evaluate(
+        cloudy_input,
+        cloudy_source_path,
+        it0folder,
+        filename_pattern,
+        points,
+        rad_bg,
+        n_jobs,
+        interp_column
+    )
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial setup")
     print("\n\n")
@@ -542,7 +576,8 @@ def sample(
             filename_pattern,
             points,
             rad_bg,
-            n_jobs
+            n_jobs,
+            interp_column
         )
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
         print(f"Total time: {seconds_to_human_readable(round(time.time() - timeBeginLoop, 2))}")
@@ -640,7 +675,7 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
     print(f"{round(end - begin, 2)}s to plot current iteration")
 
 
-def _load_point(filename, filename_pattern, coordinates):
+def _load_point(filename, filename_pattern, coordinates, column_index):
     """
     Load Ctot from the given cloudy cooling output ("*.cool") file.
     Filename needs to contain the full path to the file.
@@ -649,6 +684,8 @@ def _load_point(filename, filename_pattern, coordinates):
 
     :param filename:
     :param filename_pattern:
+    :param coordinates:
+    :param column_index:
     :return:                    Dict
     """
     result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
@@ -660,14 +697,14 @@ def _load_point(filename, filename_pattern, coordinates):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
     try:
-        point["values"] = np.log10(float(np.loadtxt(filename, usecols=COLUMN_INDEX)))
+        point["values"] = np.log10(float(np.loadtxt(filename, usecols=column_index)))
         return point
     except:
         print("Could not read point from file", filename)
         return None
 
 
-def load_existing_raw_data(folder, filename_pattern, coordinates):
+def load_existing_raw_data(folder, filename_pattern, coordinates, column_index):
     """
     Loads Ctot from all files ending in .cool in the given folder and subfolders.
 
@@ -683,7 +720,7 @@ def load_existing_raw_data(folder, filename_pattern, coordinates):
 
     for filename in filenames:
         if filename.endswith(".cool"):
-            point = _load_point(filename, filename_pattern, coordinates)
+            point = _load_point(filename, filename_pattern, coordinates, column_index)
             if point:
                 points.append(point)
 
@@ -938,7 +975,14 @@ def _f_nu_to_string(f_nu):
     return out
 
 
-def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern, points, rad_bg_function, n_jobs):
+def _cloudy_evaluate(input_file,
+                     path_to_source,
+                     output_folder,
+                     filename_pattern,
+                     points,
+                     rad_bg_function,
+                     n_jobs,
+                     column_index):
     """
     Evaluate the given points with cloudy using the given file template.
 
@@ -948,6 +992,7 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     :param filename_pattern:    As in sample()
     :param points:              Dataframe, as in sample()
     :param rad_bg_function:     As returned from _get_rad_bg_as_function()
+    :param column_index:        Index of the column to read values from
     :return:
     """
     filenames = []
@@ -982,7 +1027,7 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     missing_values = False
     for i, index in enumerate(points.loc[points["values"].isnull()].index):
         try:
-            points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=COLUMN_INDEX))
+            points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=column_index))
         except:
             print("Could not read file:", filenames[i] + ".cool")
             points.loc[index, "values"] = None
