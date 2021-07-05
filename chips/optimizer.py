@@ -779,7 +779,7 @@ def load_existing_raw_data(
                     points.append(point)
     elif type(column_index) == list:
         assert(type(column_names == list))
-        assert(len(column_names) == list(column_index))
+        assert(len(column_names) == len(column_index))
         columns = dict(zip(column_names, column_index))
 
         for filename in filenames:
