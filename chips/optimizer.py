@@ -39,6 +39,7 @@ def sample(
         random_samples_per_iteration=30,
 
         interp_column=3,
+        use_net_cooling=False,
         suppress_interp_column_warning=False,
         save_fractions=False,
 
@@ -101,6 +102,10 @@ def sample(
     :param max_error:                       Largest interpolation error permitted.
     :param random_samples_per_iteration:    How many completely random samples to add each iteration
     :param interp_column:                   The column to read from .cool files for data. 3 = cooling, 2 = heating
+    :param use_net_cooling:                 Instead of cooling or heating, use (Heating - Cooling).
+                                            Overrides interp_column.
+                                            If enabled, asinh(Lambda_net) will be used instead of log10(Lambda_net),
+                                            because in contrast to Lambda and Gamma, Lambda_net can be negative.
     :param suppress_interp_column_warning:  Do not throw warning when attempting to read columns other than 2 or 3.
     :param save_fractions:                  Save electron and hydrogen fractions to points file. For use with gadget.
     :param n_jobs:                          How many cloudy jobs to run in parallel
@@ -186,13 +191,15 @@ def sample(
     if cleanup not in [None, "outfiles", "full"]:
         raise RuntimeError(f"Invalid value for cleanup parameter: {cleanup}")
 
-    # Check if the column we are reading from the .cool file is valid
-    if not suppress_interp_column_warning:
-        if interp_column != 2 and interp_column != 3:
-            raise RuntimeWarning(f"interp_column is not 2 (heating) or 3 (cooling), but {interp_column}. "
-                                 "If you really wish to proceed, set suppress_interp_column_warning=True.")
-    else:
-        print("Interpolation column warning suppressed.")
+    if not use_net_cooling:
+        # Check if the column we are reading from the .cool file is valid
+        if not suppress_interp_column_warning:
+            if interp_column != 2 and interp_column != 3:
+                raise RuntimeWarning(f"interp_column is not 2 (heating) or 3 (cooling), but {interp_column}. "
+                                     "If you really wish to proceed, set suppress_interp_column_warning=True.")
+        else:
+            print(f"Interpolation column warning suppressed. (interp_column = {interp_column})")
+
 
     ####################################################################################################################
     ################################################    Diagnostics    #################################################
@@ -215,13 +222,16 @@ def sample(
     print("Existing data".ljust(50) + str(existing_data))
     print("Points per dimension of initial grid ".ljust(50) + str(initial_grid))
     print("Filename pattern ".ljust(50) + str(filename_pattern))
-    print("Interpolation column ".ljust(50) + str(interp_column), sep=" ")
-    if interp_column == 2:
-        print("(heating)")
-    elif interp_column == 3:
-        print("(cooling)")
+    if use_net_cooling:
+        print("Using net cooling instead of single column")
     else:
-        print("(unknown)")
+        print("Interpolation column ".ljust(50) + str(interp_column), sep=" ")
+        if interp_column == 2:
+            print("(heating)")
+        elif interp_column == 3:
+            print("(cooling)")
+        else:
+            print("(unknown)")
     print()
     print("Poisson disc sampling radius:".ljust(50) + str(poisson_disc_scale))
     print("Threshold (dex)".ljust(50) + str(accuracy_threshold))
@@ -319,7 +329,8 @@ def sample(
         corners,
         rad_bg,
         n_jobs,
-        interp_column
+        interp_column,
+        use_net_cooling
     )
     points = pd.concat((points, corners), ignore_index=True)
 
@@ -334,7 +345,8 @@ def sample(
         points,
         rad_bg,
         n_jobs,
-        interp_column
+        interp_column,
+        use_net_cooling
     )
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial setup")
@@ -580,7 +592,8 @@ def sample(
             points,
             rad_bg,
             n_jobs,
-            interp_column
+            interp_column,
+            use_net_cooling
         )
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
         print(f"Total time: {seconds_to_human_readable(round(time.time() - timeBeginLoop, 2))}")
@@ -702,7 +715,7 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
     print(f"{round(end - begin, 2)}s to plot current iteration")
 
 
-def _load_point(filename, filename_pattern, coordinates, column_index):
+def _load_point(filename, filename_pattern, coordinates, column_index, use_net_cooling=False):
     """
     Load Ctot or Htot from the given cloudy cooling output ("*.cool") file. Applies log10 to the read values.
     Filename needs to contain the full path to the file.
@@ -713,6 +726,7 @@ def _load_point(filename, filename_pattern, coordinates, column_index):
     :param filename_pattern:    how to parse filename -> coordinates
     :param coordinates:         Coordinate list
     :param column_index:        int or list
+    :param use_net_cooling:     bool
     :return:                    Dict
     """
     result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
@@ -723,7 +737,11 @@ def _load_point(filename, filename_pattern, coordinates, column_index):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
     try:
-        point["values"] = np.log10(float(np.loadtxt(filename, usecols=column_index)))
+        if use_net_cooling:
+            vals = np.loadtxt(filename, usecols=(2, 3))
+            point["values"] = np.arcsin(vals[0 - vals[1]])
+        else:
+            point["values"] = np.log10(float(np.loadtxt(filename, usecols=column_index)))
         return point
     except:
         print("Could not read point from file", filename)
@@ -767,7 +785,8 @@ def load_existing_raw_data(
         coordinates,
         column_index,
         file_ending=".cool",
-        column_names=None):
+        column_names=None,
+        use_net_cooling=False):
     """
     Loads Ctot from all files ending in .cool in the given folder and subfolders.
 
@@ -777,6 +796,10 @@ def load_existing_raw_data(
     :param column_index:        int or list, columns to load
     :param column_names:        list, name of columns. Has to be given if column_index is list. Otherwise ignored.
     :param file_ending:         File ending of files to load.
+    :param use_net_cooling:     Both column_names and column_index will be ignored. The net cooling rate will
+                                be loaded instead. To keep it consistent with the main loop, asinh() is applied
+                                to the difference. If you want to get the "regular" net cooling, apply sinh() to the
+                                result.
     :return:                    Dataframe of points
     """
     # Find all files in the specified folder (and subfolders)
@@ -786,10 +809,10 @@ def load_existing_raw_data(
 
     points = [] # list of dicts for DataFrame constructor
 
-    if type(column_index) == int:
+    if type(column_index) == int or use_net_cooling:
         for filename in filenames:
             if filename.endswith(file_ending):
-                point = _load_point(filename, filename_pattern, coordinates, column_index)
+                point = _load_point(filename, filename_pattern, coordinates, column_index, use_net_cooling)
                 if point:
                     points.append(point)
     elif type(column_index) == list:
@@ -1063,7 +1086,8 @@ def _cloudy_evaluate(input_file,
                      points,
                      rad_bg_function,
                      n_jobs,
-                     column_index):
+                     column_index,
+                     use_net_cooling=False):
     """
     Evaluate the given points with cloudy using the given file template.
 
@@ -1074,6 +1098,8 @@ def _cloudy_evaluate(input_file,
     :param points:              Dataframe, as in sample()
     :param rad_bg_function:     As returned from _get_rad_bg_as_function()
     :param column_index:        Index of the column to read values from
+    :param use_net_cooling:     Instead of using column_index, read columns 2 and 3 and take the difference.
+                                Uses asinh instead of log10.
     :return:
     """
     filenames = []
@@ -1106,15 +1132,27 @@ def _cloudy_evaluate(input_file,
     # Step 4: Read cooling data
     # for now only Ctot
     missing_values = False
-    for i, index in enumerate(points.loc[points["values"].isnull()].index):
-        try:
-            points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=column_index))
-        except:
-            print("Could not read file:", filenames[i] + ".cool")
-            points.loc[index, "values"] = None
-            missing_values = True
+    if use_net_cooling:
+        for i, index in enumerate(points.loc[points["values"].isnull()].index):
+            try:
+                vals = np.loadtxt(filenames[i] + ".cool", usecols=(2, 3))
+                points.loc[index, "values"] = np.arcsinh(vals[0] - vals[1])
+            except:
+                print("Could not read file:", filenames[i] + ".cool")
+                points.loc[index, "values"] = None
+                missing_values = True
 
-        os.system(f"mv {filenames[i]}* {output_folder}")
+            os.system(f"mv {filenames[i]}* {output_folder}")
+    else:
+        for i, index in enumerate(points.loc[points["values"].isnull()].index):
+            try:
+                points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=column_index))
+            except:
+                print("Could not read file:", filenames[i] + ".cool")
+                points.loc[index, "values"] = None
+                missing_values = True
+
+            os.system(f"mv {filenames[i]}* {output_folder}")
 
     if missing_values:
         before = len(points.index)
