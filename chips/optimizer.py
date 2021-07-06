@@ -739,7 +739,7 @@ def _load_point(filename, filename_pattern, coordinates, column_index, use_net_c
     try:
         if use_net_cooling:
             vals = np.loadtxt(filename, usecols=(2, 3))
-            point["values"] = np.arcsin(vals[0 - vals[1]])
+            point["values"] = np.arcsin(vals[0] - vals[1])
         else:
             point["values"] = np.log10(float(np.loadtxt(filename, usecols=column_index)))
         return point
