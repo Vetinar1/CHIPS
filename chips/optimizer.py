@@ -353,7 +353,13 @@ def sample(
     print("\n\n")
 
 
-    assert (not points[values].isnull().to_numpy().any())
+    if not use_net_cooling:
+        try:
+            assert (not points[values].isnull().to_numpy().any())
+        except:
+            fname = os.path.join(output_folder, output_filename + ".fullpoints")
+            print(f"Some of the initial values are 0, dumping to {fname}")
+            points.to_csv(fname, index=False)
 
     ####################################################################################################################
     #################################################    Main Loop    ##################################################
