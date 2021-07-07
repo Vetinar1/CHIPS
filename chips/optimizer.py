@@ -332,9 +332,7 @@ def sample(
         interp_column,
         use_net_cooling
     )
-    points = pd.concat((points, corners), ignore_index=True)
 
-    points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
     assert(not points.index.duplicated().any())
 
     points  = _cloudy_evaluate(
@@ -348,6 +346,9 @@ def sample(
         interp_column,
         use_net_cooling
     )
+    points = pd.concat((points, corners), ignore_index=True)
+    points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial setup")
     print("\n\n")
@@ -360,6 +361,7 @@ def sample(
             fname = os.path.join(output_folder, output_filename + ".fullpoints")
             print(f"Some of the initial values are 0, dumping to {fname}")
             points.to_csv(fname, index=False)
+            raise RuntimeError("Encountered 0 values, see log")
 
     ####################################################################################################################
     #################################################    Main Loop    ##################################################
@@ -587,20 +589,21 @@ def sample(
         new_points["values"] = np.nan
         if significant_digits is not None:
             new_points = new_points.round(significant_digits)
-        points = pd.concat((points, new_points)).drop_duplicates().reset_index(drop=True)
 
         time3 = time.time()
-        points = _cloudy_evaluate(
+        new_points = _cloudy_evaluate(
             cloudy_input,
             cloudy_source_path,
             iteration_folder,
             filename_pattern,
-            points,
+            new_points,
             rad_bg,
             n_jobs,
             interp_column,
             use_net_cooling
         )
+        points = pd.concat((points, new_points)).drop_duplicates().reset_index(drop=True)
+
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
         print(f"Total time: {seconds_to_human_readable(round(time.time() - timeBeginLoop, 2))}")
         iteration_time = time.time() - timeA
@@ -1101,7 +1104,7 @@ def _cloudy_evaluate(input_file,
     :param path_to_source:      As in sample()
     :param output_folder:       Folder to move files to after evaluation
     :param filename_pattern:    As in sample()
-    :param points:              Dataframe, as in sample()
+    :param points:              Dataframe; all points inside will be evaluated
     :param rad_bg_function:     As returned from _get_rad_bg_as_function()
     :param column_index:        Index of the column to read values from
     :param use_net_cooling:     Instead of using column_index, read columns 2 and 3 and take the difference.
@@ -1110,7 +1113,13 @@ def _cloudy_evaluate(input_file,
     """
     filenames = []
 
-    for i in points.loc[points["values"].isnull()].index:
+    try:
+        assert(points["values"].isnull().all())
+    except:
+        raise RuntimeError("Not all values in points dataframe passed to _cloudy_evaluate are nan. "
+                           "Something has gone wrong, aborting.")
+
+    for i in points.index:
         row = points.loc[i].to_dict()
         filestring = input_file.format_map(
             {
@@ -1139,7 +1148,7 @@ def _cloudy_evaluate(input_file,
     # for now only Ctot
     missing_values = False
     if use_net_cooling:
-        for i, index in enumerate(points.loc[points["values"].isnull()].index):
+        for i, index in enumerate(points.index):
             try:
                 vals = np.loadtxt(filenames[i] + ".cool", usecols=(2, 3))
                 points.loc[index, "values"] = 1/(vals[0] - vals[1])
@@ -1179,7 +1188,7 @@ def _cloudy_evaluate(input_file,
                 points[:,"values"],
                 out=np.zeros_like(points[:,"values"].to_numpy()),
                 where=points[:,"values"]!=0
-           )
+            )
         )
     else:
         points.loc[:,"values"] = np.log10(points.loc[:,"values"])
