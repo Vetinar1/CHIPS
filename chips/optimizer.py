@@ -1185,9 +1185,9 @@ def _cloudy_evaluate(input_file,
         points.loc[:,"values"] = np.arcsinh(
             np.divide(
                 1,
-                points[:,"values"],
-                out=np.zeros_like(points[:,"values"].to_numpy()),
-                where=points[:,"values"]!=0
+                points.loc[:,"values"],
+                out=np.zeros_like(points.loc[:,"values"].to_numpy()),
+                where=points.loc[:,"values"]!=0
             )
         )
     else:
