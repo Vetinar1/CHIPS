@@ -596,7 +596,7 @@ def sample(
             cloudy_source_path,
             iteration_folder,
             filename_pattern,
-            new_points,
+            new_points.reset_index(),
             rad_bg,
             n_jobs,
             interp_column,
