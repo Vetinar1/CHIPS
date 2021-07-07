@@ -1167,7 +1167,7 @@ def _cloudy_evaluate(input_file,
             print(f"{zero_count} Lambda_net values were zero before arcsinh(1/x) transformation, and are kept at 0.\n"
                   "Does this sound reasonable?")
 
-        points[:,"values"] = np.arcsinh(
+        points.loc[:,"values"] = np.arcsinh(
             np.divide(
                 1,
                 points[:,"values"],
@@ -1176,7 +1176,7 @@ def _cloudy_evaluate(input_file,
            )
         )
     else:
-        points[:,"values"] = np.log10(points[:,"values"])
+        points.loc[:,"values"] = np.log10(points[:,"values"])
 
 
     os.remove(path_to_filenames)
