@@ -1176,7 +1176,7 @@ def _cloudy_evaluate(input_file,
            )
         )
     else:
-        points.loc[:,"values"] = np.log10(points[:,"values"])
+        points.loc[:,"values"] = np.log10(points.loc[:,"values"])
 
 
     os.remove(path_to_filenames)
