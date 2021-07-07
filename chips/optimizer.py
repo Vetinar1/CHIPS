@@ -1151,7 +1151,7 @@ def _cloudy_evaluate(input_file,
         for i, index in enumerate(points.index):
             try:
                 vals = np.loadtxt(filenames[i] + ".cool", usecols=(2, 3))
-                points.loc[index, "values"] = 1/(vals[0] - vals[1])
+                points.loc[index, "values"] = vals[0] - vals[1]
             except:
                 print("Could not read file:", filenames[i] + ".cool")
                 points.loc[index, "values"] = None
