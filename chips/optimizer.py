@@ -1177,7 +1177,7 @@ def _cloudy_evaluate(input_file,
         points = points.reset_index(drop=True)
 
     if use_net_cooling:
-        zero_count = len(points[points["values"] == 0,"values"].index)
+        zero_count = len(points.loc[points["values"] == 0,"values"].index)
         if zero_count > 0:
             print(f"{zero_count} Lambda_net values were zero before arcsinh(1/x) transformation, and are kept at 0.\n"
                   "Does this sound reasonable?")
