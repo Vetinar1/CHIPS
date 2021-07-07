@@ -1136,7 +1136,7 @@ def _cloudy_evaluate(input_file,
         for i, index in enumerate(points.loc[points["values"].isnull()].index):
             try:
                 vals = np.loadtxt(filenames[i] + ".cool", usecols=(2, 3))
-                points.loc[index, "values"] = np.arcsinh(vals[0] - vals[1])
+                points.loc[index, "values"] = 1/(vals[0] - vals[1])
             except:
                 print("Could not read file:", filenames[i] + ".cool")
                 points.loc[index, "values"] = None
@@ -1146,7 +1146,7 @@ def _cloudy_evaluate(input_file,
     else:
         for i, index in enumerate(points.loc[points["values"].isnull()].index):
             try:
-                points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=column_index))
+                points.loc[index,"values"] = np.loadtxt(filenames[i] + ".cool", usecols=column_index)
             except:
                 print("Could not read file:", filenames[i] + ".cool")
                 points.loc[index, "values"] = None
@@ -1160,6 +1160,23 @@ def _cloudy_evaluate(input_file,
         after = len(points.index)
         print(f"Dropped {after - before} rows due to issues with reading cloudy files.")
         points = points.reset_index(drop=True)
+
+    if use_net_cooling:
+        zero_count = len(points[points["values"] == 0,"values"].index)
+        if zero_count > 0:
+            print(f"{zero_count} Lambda_net values were zero before arcsinh(1/x) transformation, and are kept at 0.\n"
+                  "Does this sound reasonable?")
+
+        points[:,"values"] = np.arcsinh(
+            np.divide(
+                1,
+                points[:,"values"],
+                out=np.zeros_like(points[:,"values"].to_numpy()),
+                where=points[:,"values"]!=0
+           )
+        )
+    else:
+        points[:,"values"] = np.log10(points[:,"values"])
 
 
     os.remove(path_to_filenames)
