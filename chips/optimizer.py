@@ -334,6 +334,8 @@ def sample(
         use_net_cooling
     )
 
+    points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+    points = points.reset_index()
     assert(not points.index.duplicated().any())
 
     points[points["values"] == np.nan]  = _cloudy_evaluate(
