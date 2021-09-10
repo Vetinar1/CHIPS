@@ -668,14 +668,20 @@ def load_existing_raw_data(folder, filename_pattern, coordinates):
     """
     Loads Ctot from all files ending in .cool in the given folder and subfolders.
 
-    :param folder:
+    :param folder:      String or list of strings
     :return:            Dataframe of points
     """
     # Find all files in the specified folder (and subfolders)
     filenames = []
-    for dirpath, dirnames, fnames in os.walk(folder):
-        filenames += [os.path.join(dirpath, fname) for fname in fnames]
-
+    if type(folder) is str:
+        for dirpath, dirnames, fnames in os.walk(folder):
+            filenames += [os.path.join(dirpath, fname) for fname in fnames]
+    elif type(folder) is list:
+        for f in folder:
+            for dirpath, dirnames, fnames in os.walk(f):
+                filenames += [os.path.join(dirpath, fname) for fname in fnames]
+    else:
+        raise TypeError("Invalid type for parameter folder:", type(folder))
     points = [] # list of dicts for DataFrame constructor
 
     for filename in filenames:
