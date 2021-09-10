@@ -296,6 +296,7 @@ def sample(
                 raise RuntimeError(f"Error: {dpath} is not a valid file or folder")
 
         existing_point_count = len(points.index)
+        print("Loaded", existing_point_count, " points")
 
     if initial_grid:
         print("Setting up grid")
@@ -335,12 +336,12 @@ def sample(
 
     assert(not points.index.duplicated().any())
 
-    points  = _cloudy_evaluate(
+    points[points["values"] == np.nan]  = _cloudy_evaluate(
         cloudy_input,
         cloudy_source_path,
         it0folder,
         filename_pattern,
-        points,
+        points[points["values"] == np.nan],
         rad_bg,
         n_jobs,
         interp_column,
