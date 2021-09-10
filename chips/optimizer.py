@@ -295,6 +295,9 @@ def sample(
             else:
                 raise RuntimeError(f"Error: {dpath} is not a valid file or folder")
 
+            points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+            points = points.reset_index(drop=True)
+
         existing_point_count = len(points.index)
         print("Loaded", existing_point_count, " points")
 
@@ -333,9 +336,6 @@ def sample(
         interp_column,
         use_net_cooling
     )
-
-    points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
-    points = points.reset_index(drop=True)
     assert(not points.index.duplicated().any())
 
     points[points["values"] == np.nan]  = _cloudy_evaluate(
@@ -618,7 +618,7 @@ def sample(
     total_time_readable = seconds_to_human_readable(total_time)
 
     print()
-    print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
+    print(f"Run complete; Calculated at least {existing_point_count - len(points.index)} new points " +
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
     points = points.drop(["interpolated", "diff"], axis=1)
