@@ -76,7 +76,7 @@ def simplex_alg(neighbors, target):
         diffs2.append(dist)
 
     # first nearest neighbor
-    pnn = pneighbors[diffs2.index(min(diffs2)), :-1]
+    pnn  = pneighbors[diffs2.index(min(diffs2)), :-1]
     pnni = int(pneighbors[diffs2.index(min(diffs2)), -1])
     rsimplex.append(rneighbors[pnni])
     # points from target to nn
@@ -105,21 +105,41 @@ def simplex_alg(neighbors, target):
 
     return np.array(rsimplex)
 
-data = pd.read_csv("extra_data_test1/fulldata2.csv")
+
+data = pd.read_csv("psi_07/fulldata.csv")
 tree = KDTree(data.loc[:,["T", "nH", "Z"]].to_numpy())
 
-k = 30
-target = np.array([5, 0, -1])
+k = 100
+# target = np.array([5, 0, -1])
 
-_, neighbours = tree.query(target, k)
-print(neighbours)
-neighbours = data.loc[neighbours, ["T", "nH", "Z"]].to_numpy()
+count = 0
+for i in range(1000):
+    target = np.random.random(3)
 
-simplex = simplex_alg(neighbours, target)
-tri = Delaunay(simplex[:,:-1])
-print(tri.find_simplex(target))
-simplex = pd.DataFrame(simplex[:, :-1], columns=["T", "nH", "Z"])
+    target[0] = 4 + target[0] * 2
+    target[1] = -2 + target[1] * 4
+    target[2] = -1 + target[2] * 1
+    # target[3] = -4 + target[2] * 6
+    # target[4] = 7 + target[2] * 2
+    # target[5] = 18.5 + target[2] * 4
 
-data["index"] = data.index
-print(simplex.merge(data, on=["T", "nH", "Z"]).loc[:, ["T", "nH", "Z", "index"]])
+    _, neighbours = tree.query(target, k)
+    # print(neighbours)
+    neighbours = data.loc[neighbours, ["T", "nH", "Z"]].to_numpy()
 
+    simplex = simplex_alg(neighbours, target)
+    if simplex is None:
+        count += 1
+        continue
+    tri = Delaunay(simplex[:,:-1])
+
+    if tri.find_simplex(target) == -1:
+        print(i, "not inside")
+        count += 1
+
+    # simplex = pd.DataFrame(simplex[:, :-1], columns=["T", "nH", "Z"])
+    #
+    # data["index"] = data.index
+    # print(simplex.merge(data, on=["T", "nH", "Z"]).loc[:, ["T", "nH", "Z", "index"]])
+
+print(count)
