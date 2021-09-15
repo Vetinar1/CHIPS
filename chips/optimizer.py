@@ -338,12 +338,12 @@ def sample(
     )
     assert(not points.index.duplicated().any())
 
-    points[points["values"] == np.nan]  = _cloudy_evaluate(
+    points.loc[points["values"].isna()]  = _cloudy_evaluate(
         cloudy_input,
         cloudy_source_path,
         it0folder,
         filename_pattern,
-        points[points["values"] == np.nan],
+        points.loc[points["values"].isna()],
         rad_bg,
         n_jobs,
         interp_column,
@@ -361,10 +361,8 @@ def sample(
         try:
             assert (not points[values].isnull().to_numpy().any())
         except:
-            fname = os.path.join(output_folder, output_filename + ".fullpoints")
-            print(f"Some of the initial values are 0, dumping to {fname}")
-            points.to_csv(fname, index=False)
-            raise RuntimeError("Encountered 0 values, see log")
+            print(f"Warning: {len(points[points[values].isnull()].index)} of the initial values are NaN. Dropping.")
+            points = points.dropna()
 
     ####################################################################################################################
     #################################################    Main Loop    ##################################################
