@@ -629,6 +629,8 @@ def sample(
         points = points[points[coord[0]] <= coord[1][1]]
 
     tri = spatial.Delaunay(points[coord_list].to_numpy())
+    # *Somewhere* an index column is added and I don't know where. Get rid off it before saving.
+    points = points.drop("index", index=False)
     np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
     np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
