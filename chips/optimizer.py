@@ -636,18 +636,34 @@ def sample(
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     if save_fractions:
+        points = points.drop("values", axis=1)
         print("save_fractions == true, Loading and merging hydrogen and electron fractions")
+
+        vals = fracs = load_existing_raw_data(
+            output_folder,
+            filename_pattern,
+            coord_list,
+            [2, 3],
+            file_ending=".cool",
+            column_names=["Htot", "Ctot"]
+        ).drop_duplicates()
+
         fracs = fracs = load_existing_raw_data(
             output_folder,
             filename_pattern,
             coord_list,
-            [4, 5, 6, 7],
+            [4, 5, 6, 7, 8, 9, 10],
             file_ending=".overview",
-            column_names=["ne", "H2", "HI", "HII"]
+            column_names=["ne", "H2", "HI", "HII", "HeI", "HeII", "HeIII"]
         ).drop_duplicates()
 
         points = points.drop_duplicates()
         merged = points.merge(
+            vals,
+            "inner",
+            on=coord_list
+        )
+        merged = merged.merge(
             fracs,
             "inner",
             on=coord_list
