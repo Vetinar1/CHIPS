@@ -24,8 +24,11 @@ def simplex_alg(neighbors, target):
     while it > 1:
         # Find nearest neighbor in projective space
         diffs2 = []
-        for i, neigh in enumerate(pneighbors[:, -1]):
-            dist = np.sum(np.power(ptarget - neigh, 2))
+        # for i, neigh in enumerate(pneighbors[:, :-1]):
+        #     dist = np.sum(np.power(ptarget - neigh, 2))
+        #     diffs2.append(dist)
+        for i, neigh in enumerate(pneighbors):
+            dist = np.sum(np.power(rtarget - rneighbors[int(neigh[-1]), :-1], 2))
             diffs2.append(dist)
 
         pnn  =     pneighbors[diffs2.index(min(diffs2)), :-1]
@@ -109,11 +112,11 @@ def simplex_alg(neighbors, target):
 data = pd.read_csv("psi_07/fulldata.csv")
 tree = KDTree(data.loc[:,["T", "nH", "Z"]].to_numpy())
 
-k = 100
+k = 30
 # target = np.array([5, 0, -1])
 
 count = 0
-for i in range(1000):
+for i in range(10000):
     target = np.random.random(3)
 
     target[0] = 4 + target[0] * 2

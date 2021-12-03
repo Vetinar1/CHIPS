@@ -56,7 +56,7 @@ _, nn = btree.query(target)
 nn = points[nn]
 nnvec = nn - target
 
-fig = plt.figure(figsize=(12, 8))
+fig = plt.figure(figsize=(6, 6), dpi=150)
 ax = plt.axes(projection="3d")
 ax.set_box_aspect(aspect = (1,1,1))
 
@@ -69,9 +69,9 @@ a4 = plt.gca().quiver(
     color="red", lw=1
 )
 
-
-
 plt.show(block=False)
+
+
 
 
 
@@ -101,7 +101,7 @@ tp = target - tpn
 for i in range(projpoints.shape[0]):
     projpoints[i] += target - tp
 
-fig = plt.figure(figsize=(12, 8))
+fig = plt.figure(figsize=(6, 6), dpi=150)
 ax = plt.axes(projection="3d")
 ax.set_box_aspect(aspect = (1,1,1))
 
@@ -119,7 +119,34 @@ plt.gca().quiver(
 plt.show(block=False)
 
 
-fig = plt.figure()
+fig = plt.figure(figsize=(6, 6), dpi=150)
+ax = plt.axes(projection="3d")
+ax.set_box_aspect(aspect = (1,1,1))
+
+plt.plot(pospoints[:,0], pospoints[:,1], pospoints[:,2], "x", color="orange")
+plt.plot(negpoints[:,0], negpoints[:,1], negpoints[:,2], "b.")
+plt.plot([target[0]], [target[1]], [target[2]], "rx")
+# plt.plot([nn[0]], [nn[1]], [nn[2]], marker="+", color="orange")
+
+plt.gca().quiver(
+    target[0], target[1], target[2],
+    nn[0] - target[0], nn[1] - target[1], nn[2] - target[2],
+    color="red", lw=1
+)
+plt.gca().quiver(
+    target[0], target[1], target[2],
+    pospoints[1,0] - target[0], pospoints[1,1] - target[1], pospoints[1,2] - target[2],
+    color="green", lw=1
+)
+
+plt.show(block=False)
+
+
+
+
+
+
+fig = plt.figure(figsize=(6, 6), dpi=150)
 ax = plt.axes(projection="3d", proj_type="ortho")
 ax.set_box_aspect(aspect = (1,1,1))
 
@@ -148,6 +175,95 @@ plt.gca().quiver(
 plt.show(block=False)
 
 
+
+
+
+
+fig = plt.figure(figsize=(6, 6), dpi=150)
+ax = plt.axes(projection="3d", proj_type="ortho")
+ax.set_box_aspect(aspect = (1,1,1))
+
+plt.plot(negpoints[:,0], negpoints[:,1], negpoints[:,2], "b.")
+plt.plot([target[0]], [target[1]], [target[2]], "rx")
+# plt.plot([nn[0]], [nn[1]], [nn[2]], marker="+", color="orange")
+
+
+# plt.plot(projpoints[:,0], projpoints[:,1], projpoints[:,2], ".", color="magenta")
+for i in range(projpoints.shape[0]):
+    plt.plot(
+        [projpoints[i,0], negpoints[i,0]],
+        [projpoints[i,1], negpoints[i,1]],
+        [projpoints[i,2], negpoints[i,2]],
+        color="orange",
+        lw=0.5
+    )
+    plt.plot([projpoints[i,0]], [projpoints[i,1]], [projpoints[i,2]], ".", color="magenta")
+
+plt.gca().quiver(
+    target[0], target[1], target[2],
+    nn[0] - target[0], nn[1] - target[1], nn[2] - target[2],
+    color="red", lw=1
+)
+
+pyramid = np.array([
+    projpoints[3],
+    projpoints[20],
+    projpoints[12],
+    projpoints[3],
+    nn,
+    projpoints[20],
+    nn,
+    projpoints[12],
+])
+
+plt.plot(pyramid[:,0], pyramid[:,1], pyramid[:,2], color="green")
+plt.show(block=False)
+
+
+pyramid = np.array([
+    negpoints[3],
+    negpoints[20],
+    negpoints[12],
+    negpoints[3],
+    nn,
+    negpoints[20],
+    nn,
+    negpoints[12],
+])
+
+
+
+
+
+
+fig = plt.figure(figsize=(6, 6), dpi=150)
+ax = plt.axes(projection="3d", proj_type="ortho")
+ax.set_box_aspect(aspect = (1,1,1))
+
+plt.plot(negpoints[:,0], negpoints[:,1], negpoints[:,2], "b.")
+plt.plot([target[0]], [target[1]], [target[2]], "rx")
+# plt.plot([nn[0]], [nn[1]], [nn[2]], marker="+", color="orange")
+
+
+# plt.plot(projpoints[:,0], projpoints[:,1], projpoints[:,2], ".", color="magenta")
+for i in range(projpoints.shape[0]):
+    plt.plot(
+        [projpoints[i,0], negpoints[i,0]],
+        [projpoints[i,1], negpoints[i,1]],
+        [projpoints[i,2], negpoints[i,2]],
+        color="orange",
+        lw=0.5
+    )
+    plt.plot([projpoints[i,0]], [projpoints[i,1]], [projpoints[i,2]], ".", color="magenta")
+
+plt.gca().quiver(
+    target[0], target[1], target[2],
+    nn[0] - target[0], nn[1] - target[1], nn[2] - target[2],
+    color="red", lw=1
+)
+
+plt.plot(pyramid[:,0], pyramid[:,1], pyramid[:,2], color="green")
+plt.show(block=False)
 
 
 
@@ -184,7 +300,7 @@ for i in range(projpoints.shape[0]):
     projpoints[i] += target - tp2
 
 
-fig = plt.figure(figsize=(12, 8))
+fig = plt.figure(figsize=(6, 6), dpi=150)
 ax = plt.axes(projection="3d")
 ax.set_box_aspect(aspect = (1,1,1))
 
@@ -201,30 +317,3 @@ plt.gca().quiver(
 
 plt.show(block=False)
 
-
-fig = plt.figure(figsize=(12, 8))
-ax = plt.axes(projection="3d", proj_type="ortho")
-ax.set_box_aspect(aspect = (1,1,1))
-
-plt.plot(negpoints[:,0], negpoints[:,1], negpoints[:,2], "b.")
-plt.plot([target[0]], [target[1]], [target[2]], "rx")
-# plt.plot([nn[0]], [nn[1]], [nn[2]], marker="+", color="orange")
-
-
-plt.plot(projpoints2[:,0], projpoints2[:,1], projpoints2[:,2], ".", color="magenta")
-for i in range(min(projpoints2.shape[0], negpoints.shape[0])):
-    plt.plot(
-        [projpoints2[i,0], negpoints[i,0]],
-        [projpoints2[i,1], negpoints[i,1]],
-        [projpoints2[i,2], negpoints[i,2]],
-        color="orange",
-        lw=0.5
-    )
-
-plt.gca().quiver(
-    target[0], target[1], target[2],
-    nnvec[0], nnvec[1], nnvec[2],
-    color="red", lw=1
-)
-
-plt.show()
