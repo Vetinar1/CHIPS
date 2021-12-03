@@ -42,6 +42,7 @@ def sample(
         use_net_cooling=False,
         suppress_interp_column_warning=False,
         save_fractions=False,
+        save_triangulation=True,
 
         n_jobs=4,
         n_partitions=10,
@@ -108,6 +109,8 @@ def sample(
                                             because in contrast to Lambda and Gamma, Lambda_net can be negative.
     :param suppress_interp_column_warning:  Do not throw warning when attempting to read columns other than 2 or 3.
     :param save_fractions:                  Save electron and hydrogen fractions to points file. For use with gadget.
+    :param save_triangulation:              Whether to save the triangulation at the end (.tris and .neighbors files).
+                                            These can be very large at high dimensions.
     :param n_jobs:                          How many cloudy jobs to run in parallel
     :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
     :param max_iterations:                  Exit condition: Quit after this many iterations
@@ -631,8 +634,9 @@ def sample(
     tri = spatial.Delaunay(points[coord_list].to_numpy())
     # *Somewhere* an index column is added and I don't know where. Get rid off it before saving.
     points = points.drop("index", axis=1)
-    np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
-    np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
+    if save_triangulation:
+        np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
+        np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     if save_fractions:
