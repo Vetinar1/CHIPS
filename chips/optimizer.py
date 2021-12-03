@@ -11,8 +11,8 @@ from matplotlib import patches
 
 sns.set()
 
-# 3 = cooling, 2 = heating
-COLUMN_INDEX = 3
+# TODO Figure out how to consolidate the hydrogen fractions
+# TODO Add option for net cooling!
 
 def sample(
         cloudy_input,
@@ -37,6 +37,12 @@ def sample(
         max_error=0.5,
 
         random_samples_per_iteration=30,
+
+        interp_column=3,
+        use_net_cooling=False,
+        suppress_interp_column_warning=False,
+        save_fractions=False,
+        save_triangulation=True,
 
         n_jobs=4,
         n_partitions=10,
@@ -96,6 +102,15 @@ def sample(
                                             interpolationto be considered "good enough".
     :param max_error:                       Largest interpolation error permitted.
     :param random_samples_per_iteration:    How many completely random samples to add each iteration
+    :param interp_column:                   The column to read from .cool files for data. 3 = cooling, 2 = heating
+    :param use_net_cooling:                 Instead of cooling or heating, use (Heating - Cooling).
+                                            Overrides interp_column.
+                                            If enabled, asinh(Lambda_net) will be used instead of log10(Lambda_net),
+                                            because in contrast to Lambda and Gamma, Lambda_net can be negative.
+    :param suppress_interp_column_warning:  Do not throw warning when attempting to read columns other than 2 or 3.
+    :param save_fractions:                  Save electron and hydrogen fractions to points file. For use with gadget.
+    :param save_triangulation:              Whether to save the triangulation at the end (.tris and .neighbors files).
+                                            These can be very large at high dimensions.
     :param n_jobs:                          How many cloudy jobs to run in parallel
     :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
     :param max_iterations:                  Exit condition: Quit after this many iterations
@@ -125,7 +140,7 @@ def sample(
             for i in range(len(existing_data)):
                 existing_data[i] = os.path.expanduser(existing_data[i])
         else:
-            raise RuntimeWarning(f"Invalid type for existingd data: {type(existing_data)}")
+            raise RuntimeWarning(f"Invalid type for existing data: {type(existing_data)}")
 
 
     # Set up Output folder
@@ -179,6 +194,16 @@ def sample(
     if cleanup not in [None, "outfiles", "full"]:
         raise RuntimeError(f"Invalid value for cleanup parameter: {cleanup}")
 
+    if not use_net_cooling:
+        # Check if the column we are reading from the .cool file is valid
+        if not suppress_interp_column_warning:
+            if interp_column != 2 and interp_column != 3:
+                raise RuntimeWarning(f"interp_column is not 2 (heating) or 3 (cooling), but {interp_column}. "
+                                     "If you really wish to proceed, set suppress_interp_column_warning=True.")
+        else:
+            print(f"Interpolation column warning suppressed. (interp_column = {interp_column})")
+
+
     ####################################################################################################################
     ################################################    Diagnostics    #################################################
     ####################################################################################################################
@@ -200,6 +225,16 @@ def sample(
     print("Existing data".ljust(50) + str(existing_data))
     print("Points per dimension of initial grid ".ljust(50) + str(initial_grid))
     print("Filename pattern ".ljust(50) + str(filename_pattern))
+    if use_net_cooling:
+        print("Using net cooling instead of single column")
+    else:
+        print("Interpolation column ".ljust(50) + str(interp_column), sep=" ")
+        if interp_column == 2:
+            print("(heating)")
+        elif interp_column == 3:
+            print("(cooling)")
+        else:
+            print("(unknown)")
     print()
     print("Poisson disc sampling radius:".ljust(50) + str(poisson_disc_scale))
     print("Threshold (dex)".ljust(50) + str(accuracy_threshold))
@@ -258,12 +293,16 @@ def sample(
                 print("Attempting to recursively read raw data from folder", dpath)
                 points = pd.concat((
                     points,
-                    load_existing_raw_data(existing_data, filename_pattern, core)
+                    load_existing_raw_data(existing_data, filename_pattern, coord_list, interp_column)
                 ))
             else:
                 raise RuntimeError(f"Error: {dpath} is not a valid file or folder")
 
+            points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+            points = points.reset_index(drop=True)
+
         existing_point_count = len(points.index)
+        print("Loaded", existing_point_count, " points")
 
     if initial_grid:
         print("Setting up grid")
@@ -289,19 +328,44 @@ def sample(
         os.mkdir(it0folder)
 
     # Corners are evaluated separately because they are used on their own later
-    corners = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, corners, rad_bg, n_jobs)
-    points = pd.concat((points, corners), ignore_index=True)
-
-    points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+    corners = _cloudy_evaluate(
+        cloudy_input,
+        cloudy_source_path,
+        it0folder,
+        filename_pattern,
+        corners,
+        rad_bg,
+        n_jobs,
+        interp_column,
+        use_net_cooling
+    )
     assert(not points.index.duplicated().any())
 
-    points  = _cloudy_evaluate(cloudy_input, cloudy_source_path, it0folder, filename_pattern, points, rad_bg, n_jobs)
+    points.loc[points["values"].isna()]  = _cloudy_evaluate(
+        cloudy_input,
+        cloudy_source_path,
+        it0folder,
+        filename_pattern,
+        points.loc[points["values"].isna()],
+        rad_bg,
+        n_jobs,
+        interp_column,
+        use_net_cooling
+    )
+    points = pd.concat((points, corners), ignore_index=True)
+    points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
+
     time2 = time.time()
     print(round(time2 - time1, 2), "s to do initial setup")
     print("\n\n")
 
 
-    assert (not points[values].isnull().to_numpy().any())
+    if not use_net_cooling:
+        try:
+            assert (not points[values].isnull().to_numpy().any())
+        except:
+            print(f"Warning: {len(points[points[values].isnull()].index)} of the initial values are NaN. Dropping.")
+            points = points.dropna()
 
     ####################################################################################################################
     #################################################    Main Loop    ##################################################
@@ -529,18 +593,21 @@ def sample(
         new_points["values"] = np.nan
         if significant_digits is not None:
             new_points = new_points.round(significant_digits)
-        points = pd.concat((points, new_points)).drop_duplicates().reset_index(drop=True)
 
         time3 = time.time()
-        points = _cloudy_evaluate(
+        new_points = _cloudy_evaluate(
             cloudy_input,
             cloudy_source_path,
             iteration_folder,
             filename_pattern,
-            points,
+            new_points.reset_index(),
             rad_bg,
-            n_jobs
+            n_jobs,
+            interp_column,
+            use_net_cooling
         )
+        points = pd.concat((points, new_points)).drop_duplicates().reset_index(drop=True)
+
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
         print(f"Total time: {seconds_to_human_readable(round(time.time() - timeBeginLoop, 2))}")
         iteration_time = time.time() - timeA
@@ -552,7 +619,7 @@ def sample(
     total_time_readable = seconds_to_human_readable(total_time)
 
     print()
-    print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
+    print(f"Run complete; Calculated at least {existing_point_count - len(points.index)} new points " +
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
     points = points.drop(["interpolated", "diff"], axis=1)
@@ -565,9 +632,52 @@ def sample(
         points = points[points[coord[0]] <= coord[1][1]]
 
     tri = spatial.Delaunay(points[coord_list].to_numpy())
-    np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
-    np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
+    # *Somewhere* an index column is added and I don't know where. Get rid off it before saving.
+    points = points.drop("index", axis=1)
+    if save_triangulation:
+        np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
+        np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
+
+    if save_fractions:
+        points = points.drop("values", axis=1)
+        print("save_fractions == true, Loading and merging hydrogen and electron fractions")
+
+        vals = fracs = load_existing_raw_data(
+            output_folder,
+            filename_pattern,
+            coord_list,
+            [2, 3],
+            file_ending=".cool",
+            column_names=["Htot", "Ctot"]
+        ).drop_duplicates()
+
+        fracs = fracs = load_existing_raw_data(
+            output_folder,
+            filename_pattern,
+            coord_list,
+            [4, 5, 6, 7, 8, 9, 10],
+            file_ending=".overview",
+            column_names=["ne", "H2", "HI", "HII", "HeI", "HeII", "HeIII"]
+        ).drop_duplicates()
+
+        points = points.drop_duplicates()
+        merged = points.merge(
+            vals,
+            "inner",
+            on=coord_list
+        )
+        merged = merged.merge(
+            fracs,
+            "inner",
+            on=coord_list
+        )
+
+        merged.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
+
+        if len(points.index) != len(merged.index):
+            print("The length of the points table changed during the merge with the electron/hydrogen fractions.\n"
+                  "This is odd. You may want to double check the results and make sure the triangulation didnt break.")
 
     print("Done")
 
@@ -637,39 +747,92 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
     print(f"{round(end - begin, 2)}s to plot current iteration")
 
 
-def _load_point(filename, filename_pattern, coordinates):
+def _load_point(filename, filename_pattern, coordinates, column_index, use_net_cooling=False):
     """
-    Load Ctot from the given cloudy cooling output ("*.cool") file.
+    Load Ctot or Htot from the given cloudy cooling output ("*.cool") file. Applies log10 to the read values.
     Filename needs to contain the full path to the file.
 
     The filename pattern is used to parse the coordinates at which Ctot is given.
 
-    :param filename:
-    :param filename_pattern:
+    :param filename:            file to load
+    :param filename_pattern:    how to parse filename -> coordinates
+    :param coordinates:         Coordinate list
+    :param column_index:        int or list
+    :param use_net_cooling:     bool
     :return:                    Dict
     """
     result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
     point = result.named
 
-    # TODO Currently implicitly iterates over keys, change to coord_list...
     for coordinate in coordinates:
         if coordinate not in list(point.keys()):
             raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
 
     try:
-        point["values"] = np.log10(float(np.loadtxt(filename, usecols=COLUMN_INDEX)))
+        if use_net_cooling:
+            vals = np.loadtxt(filename, usecols=(2, 3))
+            point["values"] = np.arcsin(vals[0] - vals[1])
+        else:
+            point["values"] = np.log10(float(np.loadtxt(filename, usecols=column_index)))
         return point
     except:
         print("Could not read point from file", filename)
         return None
 
 
-def load_existing_raw_data(folder, filename_pattern, coordinates):
+def _load_point_multiple_values(filename, filename_pattern, coordinates, columns):
+    """
+    Like _load_point, but loads multiple values and does not apply log10.
+
+    :param filename:
+    :param filename_pattern:
+    :param coordinates:
+    :param columns:             Dict. Keys are column names, values are column indices
+    :return:                    Dict
+    """
+    column_names = list(columns.keys())
+    column_indices = [columns[k] for k in column_names]
+
+    result = parse(filename_pattern, os.path.splitext(os.path.basename(filename))[0])
+    point = result.named
+
+    for coordinate in coordinates:
+        if coordinate not in list(point.keys()):
+            raise RuntimeError(f"Missing coordinate {coordinate} while trying to read in file {filename}")
+
+    try:
+        vals = np.loadtxt(filename, usecols=column_indices)
+        for i in range(vals.shape[0]):
+            point[column_names[i]] = float(vals[i])
+
+        return point
+    except:
+        print("Could not read point from file", filename)
+        return None
+
+
+def load_existing_raw_data(
+        folder,
+        filename_pattern,
+        coordinates,
+        column_index,
+        file_ending=".cool",
+        column_names=None,
+        use_net_cooling=False):
     """
     Loads Ctot from all files ending in .cool in the given folder and subfolders.
 
-    :param folder:      String or list of strings
-    :return:            Dataframe of points
+    :param folder:              Folder to load from
+    :param filename_pattern:    How to parse filenames -> coordinates
+    :param coordinates:         Coordinate list
+    :param column_index:        int or list, columns to load
+    :param column_names:        list, name of columns. Has to be given if column_index is list. Otherwise ignored.
+    :param file_ending:         File ending of files to load.
+    :param use_net_cooling:     Both column_names and column_index will be ignored. The net cooling rate will
+                                be loaded instead. To keep it consistent with the main loop, asinh() is applied
+                                to the difference. If you want to get the "regular" net cooling, apply sinh() to the
+                                result.
+    :return:                    Dataframe of points
     """
     # Find all files in the specified folder (and subfolders)
     filenames = []
@@ -682,13 +845,27 @@ def load_existing_raw_data(folder, filename_pattern, coordinates):
                 filenames += [os.path.join(dirpath, fname) for fname in fnames]
     else:
         raise TypeError("Invalid type for parameter folder:", type(folder))
+
     points = [] # list of dicts for DataFrame constructor
 
-    for filename in filenames:
-        if filename.endswith(".cool"):
-            point = _load_point(filename, filename_pattern, coordinates)
-            if point:
-                points.append(point)
+    if type(column_index) == int or use_net_cooling:
+        for filename in filenames:
+            if filename.endswith(file_ending):
+                point = _load_point(filename, filename_pattern, coordinates, column_index, use_net_cooling)
+                if point:
+                    points.append(point)
+    elif type(column_index) == list:
+        assert(type(column_names == list))
+        assert(len(column_names) == len(column_index))
+        columns = dict(zip(column_names, column_index))
+
+        for filename in filenames:
+            if filename.endswith(file_ending):
+                point = _load_point_multiple_values(filename, filename_pattern, coordinates, columns)
+                if point:
+                    points.append(point)
+    else:
+        raise TypeError(f"Invalid type for column_index: {type(column_index)}")
 
     points = pd.DataFrame(points).astype(float)
     return points
@@ -941,7 +1118,15 @@ def _f_nu_to_string(f_nu):
     return out
 
 
-def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern, points, rad_bg_function, n_jobs):
+def _cloudy_evaluate(input_file,
+                     path_to_source,
+                     output_folder,
+                     filename_pattern,
+                     points,
+                     rad_bg_function,
+                     n_jobs,
+                     column_index,
+                     use_net_cooling=False):
     """
     Evaluate the given points with cloudy using the given file template.
 
@@ -949,13 +1134,22 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     :param path_to_source:      As in sample()
     :param output_folder:       Folder to move files to after evaluation
     :param filename_pattern:    As in sample()
-    :param points:              Dataframe, as in sample()
+    :param points:              Dataframe; all points inside will be evaluated
     :param rad_bg_function:     As returned from _get_rad_bg_as_function()
+    :param column_index:        Index of the column to read values from
+    :param use_net_cooling:     Instead of using column_index, read columns 2 and 3 and take the difference.
+                                Uses asinh instead of log10.
     :return:
     """
     filenames = []
 
-    for i in points.loc[points["values"].isnull()].index:
+    try:
+        assert(points["values"].isnull().all())
+    except:
+        raise RuntimeError("Not all values in points dataframe passed to _cloudy_evaluate are nan. "
+                           "Something has gone wrong, aborting.")
+
+    for i in points.index:
         row = points.loc[i].to_dict()
         filestring = input_file.format_map(
             {
@@ -983,15 +1177,27 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
     # Step 4: Read cooling data
     # for now only Ctot
     missing_values = False
-    for i, index in enumerate(points.loc[points["values"].isnull()].index):
-        try:
-            points.loc[index,"values"] = np.log10(np.loadtxt(filenames[i] + ".cool", usecols=COLUMN_INDEX))
-        except:
-            print("Could not read file:", filenames[i] + ".cool")
-            points.loc[index, "values"] = None
-            missing_values = True
+    if use_net_cooling:
+        for i, index in enumerate(points.index):
+            try:
+                vals = np.loadtxt(filenames[i] + ".cool", usecols=(2, 3))
+                points.loc[index, "values"] = vals[0] - vals[1]
+            except:
+                print("Could not read file:", filenames[i] + ".cool")
+                points.loc[index, "values"] = None
+                missing_values = True
 
-        os.system(f"mv {filenames[i]}* {output_folder}")
+            os.system(f"mv {filenames[i]}* {output_folder}")
+    else:
+        for i, index in enumerate(points.loc[points["values"].isnull()].index):
+            try:
+                points.loc[index,"values"] = np.loadtxt(filenames[i] + ".cool", usecols=column_index)
+            except:
+                print("Could not read file:", filenames[i] + ".cool")
+                points.loc[index, "values"] = None
+                missing_values = True
+
+            os.system(f"mv {filenames[i]}* {output_folder}")
 
     if missing_values:
         before = len(points.index)
@@ -999,6 +1205,23 @@ def _cloudy_evaluate(input_file, path_to_source, output_folder, filename_pattern
         after = len(points.index)
         print(f"Dropped {after - before} rows due to issues with reading cloudy files.")
         points = points.reset_index(drop=True)
+
+    if use_net_cooling:
+        zero_count = len(points.loc[points["values"] == 0,"values"].index)
+        if zero_count > 0:
+            print(f"{zero_count} Lambda_net values were zero before arcsinh(1/x) transformation, and are kept at 0.\n"
+                  "Does this sound reasonable?")
+
+        points.loc[:,"values"] = np.arcsinh(
+            np.divide(
+                1,
+                points.loc[:,"values"],
+                out=np.zeros_like(points.loc[:,"values"].to_numpy()),
+                where=points.loc[:,"values"]!=0
+            )
+        )
+    else:
+        points.loc[:,"values"] = np.log10(points.loc[:,"values"])
 
 
     os.remove(path_to_filenames)
