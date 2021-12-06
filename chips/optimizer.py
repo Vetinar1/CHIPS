@@ -376,7 +376,6 @@ def sample(
 
     # number of dimensions
     # TODO: Generalize for multiple values
-    D = len(points.columns) - 1
     while True:
         # reset index just to be on the safe side while partitioning later
         points = points.reset_index(drop=True)
@@ -385,100 +384,8 @@ def sample(
 
         drop_duplicates_and_print(points)
 
-        points["interpolated"] = np.nan
-        points["diff"] = np.nan
-        new_points = pd.DataFrame(columns=core)
-
         timeA = time.time()
-        for partition in range(n_partitions):
-            assert(not points.index.duplicated().any())
-            # TODO This part uses a lot of deep copies, might be inefficient
-            subset = points.loc[partition::n_partitions].copy(deep=True)
-            bigset = pd.concat((points, subset)).drop_duplicates(keep=False)
-
-            # TODO again, generalize
-            subset.loc[:,"interpolated"] = np.nan
-
-            # Always include corners to ensure convex hull
-            bigset = pd.concat((bigset, corners))
-            bigset = bigset.drop_duplicates()
-
-            # Need to reset the bigset index due to the concatenation
-            # Since the bigset index is not relevant again - unlike the subset index - this should be fine
-            bigset = bigset.reset_index()
-
-            # dont consider points in margins
-            for c, edges in core.items():
-                subset = subset.loc[(subset[c] > edges[0]) & (subset[c] < edges[1])]
-
-            tri = spatial.Delaunay(bigset[coord_list].to_numpy())
-            simplex_indices = tri.find_simplex(subset[coord_list].to_numpy())
-            simplices       = tri.simplices[simplex_indices]
-            transforms      = tri.transform[simplex_indices]
-
-            # The following is adapted from
-            # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
-            # 1. barycentric coordinates of points; N-1
-            bary = np.einsum(
-                "ijk,ik->ij",
-                transforms[:,:D,:D],
-                subset[coord_list].to_numpy() - transforms[:, D, :]
-            )
-
-            # 2. Add dependent barycentric coordinate to obtain weights
-            weights = np.c_[bary, 1 - bary.sum(axis=1)]
-
-            # 3. Interpolation
-            # TODO vectorize
-            for i, index in enumerate(subset.index):
-                subset.loc[index, "interpolated"] = np.inner(
-                    bigset.loc[
-                        bigset.index[simplices[i]],
-                        "values"
-                    ],
-                    weights[i]
-                )
-
-            assert(not subset["interpolated"].isnull().to_numpy().any())
-
-            # 4. Find points over threshold
-            subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
-
-            # Draw new samples by finding geometric centers of the simplices containing the points over threshold
-            if not subset[subset["diff"] > accuracy_threshold].empty:
-                # TODO: Reusing old variables is not clean
-                simplex_indices = tri.find_simplex(
-                    subset.loc[
-                        subset["diff"] > accuracy_threshold,
-                        coord_list
-                    ].to_numpy()
-                )
-                simplices       = tri.simplices[simplex_indices]
-
-                # Shape: (N_simplices, N_points_per_simplex, N_coordinates_per_point)
-                simplex_points = np.zeros(
-                    (simplices.shape[0], simplices.shape[1], simplices.shape[1]-1)
-                )
-
-                for i in range(simplices.shape[0]):
-                    simplex_points[i] = bigset.loc[
-                        bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
-                        coord_list
-                    ].to_numpy()
-
-                # new samples = averages (centers) of the points making up the simplices
-                samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
-                samples = pd.DataFrame(samples, columns=coord_list)
-                new_points = pd.concat((new_points, samples))
-                new_points = new_points.drop_duplicates()
-            else:
-                print(f"No points over threshold in partition {partition}")
-
-            # Write interpolated and diffs back into original points dataframe
-            points.loc[subset.index, "interpolated"] = subset["interpolated"]
-            points.loc[subset.index, "diff"] = subset["diff"]
-            assert(not subset.loc[:,"interpolated"].isnull().to_numpy().any())
-
+        points, new_points = sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold)
         timeB = time.time()
 
         # Calculate some stats/diagnostics
@@ -682,6 +589,124 @@ def sample(
     print("Done")
 
     return points
+
+
+def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold):
+    """
+    Do one Delaunay Triangulation based sampling step.
+    1. Calculate Delaunay Triangulation
+    2. Use it to interpolate points
+    3. For all points that are over threshold, draw new sample at the center of the matching simplex
+
+    Moved into separate function as part of the PSI integration.
+
+    :param points:              Pandas dataframe. Modified in-place.
+    :param n_partitions:        Number of partitions to use, default 10
+    :param coord_list:          List of coordinates (names)
+    :param core:                Dict describing the extents of the core of the parameter space, see sample()
+    :param corners:             Pandas dataframe containing corners
+    :param accuracy_threshold:  float
+    :return points, new_points: Original, modified points dataframe.
+                                Dataframe containing all the new sample locations. (Not yet evaluated.)
+    """
+    new_points = pd.DataFrame(columns=core)
+    points["interpolated"] = np.nan
+    points["diff"] = np.nan
+    D = len(coord_list)
+
+    for partition in range(n_partitions):
+        assert(not points.index.duplicated().any())
+        # TODO This part uses a lot of deep copies, might be inefficient
+        subset = points.loc[partition::n_partitions].copy(deep=True)
+        bigset = pd.concat((points, subset)).drop_duplicates(keep=False)
+
+        subset.loc[:,"interpolated"] = np.nan
+
+        # Always include corners to ensure convex hull
+        bigset = pd.concat((bigset, corners))
+        bigset = bigset.drop_duplicates()
+
+        # Need to reset the bigset index due to the concatenation
+        # Since the bigset index is not relevant again - unlike the subset index - this should be fine
+        bigset = bigset.reset_index()
+
+        # dont consider points in margins
+        for c, edges in core.items():
+            subset = subset.loc[(subset[c] > edges[0]) & (subset[c] < edges[1])]
+
+        tri = spatial.Delaunay(bigset[coord_list].to_numpy())
+        simplex_indices = tri.find_simplex(subset[coord_list].to_numpy())
+        simplices       = tri.simplices[simplex_indices]
+        transforms      = tri.transform[simplex_indices]
+
+        # The following is adapted from
+        # https://stackoverflow.com/questions/30373912/interpolation-with-delaunay-triangulation-n-dim/30401693#30401693
+        # 1. barycentric coordinates of points; N-1
+        bary = np.einsum(
+            "ijk,ik->ij",
+            transforms[:,:D,:D],
+            subset[coord_list].to_numpy() - transforms[:, D, :]
+        )
+
+        # 2. Add dependent barycentric coordinate to obtain weights
+        weights = np.c_[bary, 1 - bary.sum(axis=1)]
+
+        # 3. Interpolation
+        # TODO vectorize
+        for i, index in enumerate(subset.index):
+            subset.loc[index, "interpolated"] = np.inner(
+                bigset.loc[
+                    bigset.index[simplices[i]],
+                    "values"
+                ],
+                weights[i]
+            )
+
+        assert(not subset["interpolated"].isnull().to_numpy().any())
+
+        # 4. Find points over threshold
+        subset["diff"] = np.abs(subset["interpolated"] - subset["values"])
+
+        # Draw new samples by finding geometric centers of the simplices containing the points over threshold
+        if not subset[subset["diff"] > accuracy_threshold].empty:
+            # TODO: Reusing old variables is not clean
+            simplex_indices = tri.find_simplex(
+                subset.loc[
+                    subset["diff"] > accuracy_threshold,
+                    coord_list
+                ].to_numpy()
+            )
+            simplices       = tri.simplices[simplex_indices]
+
+            # Shape: (N_simplices, N_points_per_simplex, N_coordinates_per_point)
+            simplex_points = np.zeros(
+                (simplices.shape[0], simplices.shape[1], simplices.shape[1]-1)
+            )
+
+            for i in range(simplices.shape[0]):
+                simplex_points[i] = bigset.loc[
+                    bigset.index[simplices[i]], # effectively iloc, since simplices are positions, not indices
+                    coord_list
+                ].to_numpy()
+
+            # new samples = averages (centers) of the points making up the simplices
+            samples = np.sum(simplex_points, axis=1) / simplices.shape[1]
+            samples = pd.DataFrame(samples, columns=coord_list)
+            new_points = pd.concat((new_points, samples))
+            new_points = new_points.drop_duplicates()
+        else:
+            print(f"No points over threshold in partition {partition}")
+
+        # Write interpolated and diffs back into original points dataframe
+        points.loc[subset.index, "interpolated"] = subset["interpolated"]
+        points.loc[subset.index, "diff"] = subset["diff"]
+        assert(not subset.loc[:,"interpolated"].isnull().to_numpy().any())
+
+    return points, new_points
+
+
+def sample_step_psi(points):
+    pass
 
 
 def _get_corners(param_space):
