@@ -9,6 +9,7 @@ import seaborn as sns
 import time
 from parse import parse
 from matplotlib import patches
+from scipy.spatial import KDTree
 
 sns.set()
 
@@ -761,7 +762,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     :return:                    points: Original, modified dataframe
                                 new_points: Dataframe containing all the new sample locations
     """
-    new_points = pd.DataFrame(columns=core)
+    # new_points = pd.DataFrame(columns=core)
     points["interpolated"] = np.nan
     points["diff"] = np.nan
     D = len(coord_list)
@@ -774,13 +775,15 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
 
     coreset = coreset.reset_index(drop=True) # important
 
-    tree = KDTree(coreset)
-
     errcounter = 0
     coreset_numpy = coreset[coord_list].to_numpy()
-    points_numpy  = points.to_numpy()
-    for point in coreset_numpy.shape[0]:
-        simplex = build_simplex_adaptive(points_numpy, points, tree, k, factor, max_steps)
+    points_numpy  = points[coord_list].to_numpy()
+    tree = KDTree(points_numpy)
+    new_points = []
+
+    for i, row in coreset.iterrows():
+        point = row[coord_list].to_numpy()
+        simplex = build_simplex_adaptive(points_numpy, point, tree, k, factor, max_steps)
 
         if simplex is None:
             errcounter += 1
@@ -789,26 +792,26 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         # Is this the most efficient way of calculating the barycentric coordinates?
         # Hell no.
         # But its easy to program.
-        simplex = points[simplex]
-        tri = spatial.Delaunay(simplex)
+        simplex = points.loc[simplex]
+        tri = spatial.Delaunay(simplex[coord_list].to_numpy())
         trafo = tri.transform[0]
         bary = np.einsum(
-            "ijk,ik->ij",
+            "jk,k->j",
             trafo[:D,:D],
             point - trafo[D, :]
         )
-        weights = np.c_[bary, 1 - bary.sum(axis=1)]
+        weights = np.append(bary, np.array([1 - bary.sum()]))
 
-        # technically theres no reason to keep these in the dataframe, im doing it mostly for
-        # compatibility/consistency with the Delaunay option
         coreset.loc[i, "interpolated"] = np.sum(simplex["values"] * weights)
         coreset.loc[i, "diff"] = np.abs(coreset.loc[i, "values"] - coreset.loc[i, "interpolated"])
 
         if coreset.loc[i, "diff"] > accuracy_threshold:
             new_point = np.sum(simplex[coord_list]) / (D+1)
-            new_points = pd.concat((new_points, new_point))
+            new_points.append(new_point)
 
-    new_points = new_points.reset_index(drop=True)
+    points.loc[coreset.index, ["interpolated", "diff"]] = coreset.loc[:, ["interpolated", "diff"]]
+    new_points = pd.DataFrame(new_points)
+    points = points.reset_index(drop=True)
 
     if errcounter:
         print(f"Simplex construction failed for {errcounter} out of {coreset_numpy.shape[0]} points")

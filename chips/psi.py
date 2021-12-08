@@ -149,22 +149,32 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
     :param max_steps:   Number of times to retry before giving up
     :return:            Numpy array with indices of simplex in points or None if no simplex could be built
     """
+    break_early = False
     dists, neighbor_indices = tree.query(target, k)
     if dists[0] < 1e-8: # epsilon
         # one dropped value shouldnt matter except at *really* small k...
         neighbor_indices = neighbor_indices[1:]
+    if neighbor_indices.shape[0] > points.shape[0]:
+        neighbor_indices = neighbor_indices[:points.shape[0]-1]
+        break_early = True # no point iterating if we are already at max k
     neighbors = points[neighbor_indices]
 
     simplex = build_simplex(neighbors, target)
 
     steps = 0
     while simplex is None and steps < max_steps:
+        if break_early:
+            break
+
         k *= factor
         steps += 1
         dists, neighbor_indices = tree.query(target, k)
         if dists[0] < 1e-8: # epsilon
             # one dropped value shouldnt matter except at *really* small k...
             neighbor_indices = neighbor_indices[1:]
+        if neighbor_indices.shape[0] > points.shape[0]:
+            neighbor_indices = neighbor_indices[:points.shape[0]-1]
+            break_early = True
 
         neighbors = points[neighbor_indices]
 
@@ -179,7 +189,7 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
 if __name__ == "__main__":
     from scipy.spatial import KDTree, Delaunay
     dimensions = 3
-    k = 40
+    k = 15
     N_points = 10000
     N_targets = 1000
 
