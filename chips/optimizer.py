@@ -330,7 +330,7 @@ def sample(
 
     if initial_grid:
         print("Setting up grid")
-        grid_points = _set_up_amorphous_grid(initial_grid, core, margins, poisson_disc_scale)
+        grid_points = _set_up_amorphous_grid(initial_grid, core, margins, poisson_disc_scale, coord_list)
         if significant_digits is not None:
             grid_points = grid_points.round(significant_digits)
         points = pd.concat((points, grid_points))
@@ -412,7 +412,8 @@ def sample(
         if mode == "Delaunay":
             points, new_points = sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold)
         elif mode == "PSI":
-            points, new_points = sample_step_psi(points)
+            points, new_points = sample_step_psi(points, coord_list, core, accuracy_threshold, psi_nearest_neighbors,
+                                                 psi_nn_factor, psi_max_tries)
         else:
             print("Invalid mode. Something went wrong.")
             exit()
@@ -537,7 +538,7 @@ def sample(
             cloudy_source_path,
             iteration_folder,
             filename_pattern,
-            new_points.reset_index(),
+            new_points.reset_index(drop=True),
             rad_bg,
             n_jobs,
             interp_column,
@@ -570,7 +571,9 @@ def sample(
 
     tri = spatial.Delaunay(points[coord_list].to_numpy())
     # *Somewhere* an index column is added and I don't know where. Get rid off it before saving.
-    points = points.drop("index", axis=1)
+    # update: i think i fixed it but lets keep it just in case
+    if "index" in points.columns:
+        points = points.drop("index", axis=1)
     if save_triangulation:
         np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
         np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
@@ -658,7 +661,7 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
 
         # Need to reset the bigset index due to the concatenation
         # Since the bigset index is not relevant again - unlike the subset index - this should be fine
-        bigset = bigset.reset_index()
+        bigset = bigset.reset_index(drop=True)
 
         # dont consider points in margins
         for c, edges in core.items():
@@ -732,6 +735,8 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
         points.loc[subset.index, "diff"] = subset["diff"]
         assert(not subset.loc[:,"interpolated"].isnull().to_numpy().any())
 
+    points = points.reset_index(drop=True)
+    new_points = new_points.reset_index(drop=True)
     return points, new_points
 
 
@@ -767,7 +772,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     for c, edges in core.items():
         coreset = coreset.loc[(coreset[c] > edges[0]) & (coreset[c] < edges[1])]
 
-    coreset = coreset.reset_index() # important
+    coreset = coreset.reset_index(drop=True) # important
 
     tree = KDTree(coreset)
 
@@ -803,6 +808,10 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
             new_point = np.sum(simplex[coord_list]) / (D+1)
             new_points = pd.concat((new_points, new_point))
 
+    new_points = new_points.reset_index(drop=True)
+
+    if errcounter:
+        print(f"Simplex construction failed for {errcounter} out of {coreset_numpy.shape[0]} points")
     return points, new_points
 
 
@@ -842,7 +851,7 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
     begin = time.time()
     points["hue"]     = "Older Iterations"
     new_points["hue"] = "Latest Iteration"
-    fullpoints = pd.concat((points, new_points))
+    fullpoints = pd.concat((points, new_points)).reset_index(drop=True)
 
     grid = sns.pairplot(
         fullpoints,
@@ -1015,7 +1024,7 @@ def _set_up_grid(num_per_dim, parameter_space, margins, perturbation_scale=None)
 
     # https://stackoverflow.com/a/46744050
     index = pd.MultiIndex.from_product(param_grid, names=param_names)
-    points = pd.DataFrame(index=index).reset_index()
+    points = pd.DataFrame(index=index).reset_index(drop=True)
 
     if perturbation_scale:
         for coord in param_names:
@@ -1033,7 +1042,7 @@ def _set_up_grid(num_per_dim, parameter_space, margins, perturbation_scale=None)
     return points
 
 
-def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, poisson_disc_sampling_scale):
+def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, poisson_disc_sampling_scale, coord_list):
     """
     Uses Poisson disc sampling to set up an amorphous (instead of regular) grid
     https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph07-poissondisk.pdf
@@ -1046,13 +1055,14 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, poisson_disc_s
     :param margins:                 See _set_up_grid()
     :param poisson_disc_sampling_scale:      NOT used for perturbation, but actually passed as radius to the poisson disc
                                     sampling function TODO Prettify
+    :param coord_list:              List of cooordinate names as in sample()
     :return:
     """
     # Take regular grid, no perturbation
     points_full = _set_up_grid(num_per_dim, parameter_space, margins)
 
     # Cut out all the "middle values"
-    points = pd.DataFrame(columns=points_full.columns)
+    points = pd.DataFrame(columns=points_full.columns, dtype=np.float64)
     for column in points_full.columns:
         points = pd.concat((
             points,
@@ -1071,9 +1081,7 @@ def _set_up_amorphous_grid(num_per_dim, parameter_space, margins, poisson_disc_s
 
     # Stretch cube to fit parameter space
     # Note: Changing this now to stretch over margins as well, required for stability. technically core != core
-    core_columns = list(points.columns)
-    core_columns.remove("values")
-    core = pd.DataFrame(core, columns=core_columns)
+    core = pd.DataFrame(core, columns=coord_list, dtype=np.float64)
     for param, limits in _get_param_space_with_margins(parameter_space, margins).items():
         core[param] = (max(limits) - min(limits)) * core[param] + min(limits)
 
@@ -1264,6 +1272,11 @@ def _cloudy_evaluate(input_file,
     :return:
     """
     filenames = []
+
+    try:
+        assert(not points.empty)
+    except:
+        raise RuntimeWarning("Points dataframe passed to _cloudy_evaluate is empty")
 
     try:
         assert(points["values"].isnull().all())
