@@ -138,6 +138,9 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
     """
     Adaptive interface for build_simplex. Automatically increases k if the algorithm fails.
 
+    As a convenience feature for sample_step_psi() it automatically ignores nearest neighbors that
+    are within an epsilon (1e-8). Doing this here avoids some unnecessary array copies.
+
     :param points:      2D numpy array of points
     :param target:      1D numpy array containing target point
     :param tree:        scipy KDTree object
@@ -146,7 +149,10 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
     :param max_steps:   Number of times to retry before giving up
     :return:            Numpy array with indices of simplex in points or None if no simplex could be built
     """
-    _, neighbor_indices = tree.query(target, k)
+    dists, neighbor_indices = tree.query(target, k)
+    if dists[0] < 1e-8: # epsilon
+        # one dropped value shouldnt matter except at *really* small k...
+        neighbor_indices = neighbor_indices[1:]
     neighbors = points[neighbor_indices]
 
     simplex = build_simplex(neighbors, target)
@@ -154,12 +160,20 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
     steps = 0
     while simplex is None and steps < max_steps:
         k *= factor
-        _, neighbor_indices = tree.query(target, k)
+        steps += 1
+        dists, neighbor_indices = tree.query(target, k)
+        if dists[0] < 1e-8: # epsilon
+            # one dropped value shouldnt matter except at *really* small k...
+            neighbor_indices = neighbor_indices[1:]
+
         neighbors = points[neighbor_indices]
 
         simplex = build_simplex(neighbors, target)
 
-    return neighbor_indices[simplex]
+    if simplex is not None:
+        return neighbor_indices[simplex]
+    else:
+        return None
 
 
 if __name__ == "__main__":
@@ -210,14 +224,12 @@ if __name__ == "__main__":
     wrong = 0
     for i in range(N_targets):
         target = np.random.random(dimensions) + 0.5
-
         simplex = build_simplex_adaptive(points, target, tree, k, 2, 4)
 
         if simplex is None:
             invalid += 1
             continue
 
-        # print("Simplex", simplex)
         tri = Delaunay(points[simplex])
 
         if tri.find_simplex(target) == -1:
