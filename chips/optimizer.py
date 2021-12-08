@@ -1,5 +1,6 @@
 import os
 from chips.utils import *
+from chips.psi import *
 import pandas as pd
 import itertools
 from scipy import interpolate, spatial
@@ -21,6 +22,8 @@ def sample(
         output_filename,
         param_space,
         param_space_margins,
+
+        mode="Delaunay",
 
         rad_params=None,
         rad_params_margins=None,
@@ -45,7 +48,12 @@ def sample(
         save_triangulation=True,
 
         n_jobs=4,
+
         n_partitions=10,
+        psi_nearest_neighbors=50,
+        psi_nn_factor=2,
+        psi_max_tries=4,
+
 
         max_iterations=20,
         max_storage_gb=10,
@@ -77,6 +85,10 @@ def sample(
                                                         Not accounting for margins
     :param param_space_margins:             How much buffer to add around the parameter space for interpolation,
                                             per parameter. If one value per parameter: Relative, if two: Absolute
+    :param mode:                            "Delaunay" or "PSI". Delaunay is recommended for low dimensionalities
+                                            and sample counts. PSI otherwise.
+                                            The following settings have no effect if mode is "PSI":
+                                            n_partitions
     :param rad_params:                      "key":(path, (min, max), scaling).
                                             key: name of the parameter
                                             path: path to spectrum file, must contain data in format f(x) x
@@ -112,7 +124,14 @@ def sample(
     :param save_triangulation:              Whether to save the triangulation at the end (.tris and .neighbors files).
                                             These can be very large at high dimensions.
     :param n_jobs:                          How many cloudy jobs to run in parallel
-    :param n_partitions:                    How many partitions to use during Triangulation+Interpolation
+    :param n_partitions:                    How many partitions to use during Triangulation+Interpolation. Has no
+                                            effect if mode is "PSI".
+    :param psi_nearest_neighbors:           Number of nearest neighbors to use in PSI algorithm. Has no effect if
+                                            mode is "Delaunay".
+    :param psi_nn_factor:                   Multiplicator for psi_nearest_neighbors if simplex construction algorithm
+                                            fails. Has no effect if mode is "Delaunay".
+    :param psi_max_tries:                   Maximum number of retries if simplex construction algorithm fails. Has no
+                                            effect if mode is "Delaunay".
     :param max_iterations:                  Exit condition: Quit after this many iterations
     :param max_storage_gb:                  Exit condition: Quit after this much storage space has been used
     :param max_time:                        Exit condition: Quit after this much time (seconds).
@@ -202,6 +221,11 @@ def sample(
                                      "If you really wish to proceed, set suppress_interp_column_warning=True.")
         else:
             print(f"Interpolation column warning suppressed. (interp_column = {interp_column})")
+
+
+    if mode not in ["Delaunay", "PSI"]:
+        print("Invalid mode: ", mode)
+        print("Valid modes: Delaunay, PSI")
 
 
     ####################################################################################################################
@@ -385,7 +409,13 @@ def sample(
         drop_duplicates_and_print(points)
 
         timeA = time.time()
-        points, new_points = sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold)
+        if mode == "Delaunay":
+            points, new_points = sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold)
+        elif mode == "PSI":
+            points, new_points = sample_step_psi(points)
+        else:
+            print("Invalid mode. Something went wrong.")
+            exit()
         timeB = time.time()
 
         # Calculate some stats/diagnostics
@@ -705,8 +735,75 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
     return points, new_points
 
 
-def sample_step_psi(points):
-    pass
+def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps):
+    """
+    Do one sampling step using the PSI algorithm.
+    https://arxiv.org/abs/2109.13926
+
+    For each point:
+    1. Get k nearest neighbors
+    2. Build simplex using PSI
+    3. Use simplex to interpolate
+    4. If difference to interpolated value is over threshold, add center of simplex as new sample
+
+    :param points:              Pandas dataframe. Modified in-place.
+    :param coord_list:          List of coordinates (names)
+    :param core:                Dict describing the extents of the core of the parameter space, see sample()
+    :param accuracy_threshold:  float
+    :param k:                   Number of nearest neighbors to use
+    :param factor:              If PSI fails, multiply k with this and try again
+    :param max_steps:           Retry this many times
+    :return:                    points: Original, modified dataframe
+                                new_points: Dataframe containing all the new sample locations
+    """
+    new_points = pd.DataFrame(columns=core)
+    points["interpolated"] = np.nan
+    points["diff"] = np.nan
+    D = len(coord_list)
+
+    coreset = points.copy(deep=True)
+
+    # dont consider points in margins
+    for c, edges in core.items():
+        coreset = coreset.loc[(coreset[c] > edges[0]) & (coreset[c] < edges[1])]
+
+    coreset = coreset.reset_index() # important
+
+    tree = KDTree(coreset)
+
+    errcounter = 0
+    coreset_numpy = coreset[coord_list].to_numpy()
+    points_numpy  = points.to_numpy()
+    for point in coreset_numpy.shape[0]:
+        simplex = build_simplex_adaptive(points_numpy, points, tree, k, factor, max_steps)
+
+        if simplex is None:
+            errcounter += 1
+            continue
+
+        # Is this the most efficient way of calculating the barycentric coordinates?
+        # Hell no.
+        # But its easy to program.
+        simplex = points[simplex]
+        tri = spatial.Delaunay(simplex)
+        trafo = tri.transform[0]
+        bary = np.einsum(
+            "ijk,ik->ij",
+            trafo[:D,:D],
+            point - trafo[D, :]
+        )
+        weights = np.c_[bary, 1 - bary.sum(axis=1)]
+
+        # technically theres no reason to keep these in the dataframe, im doing it mostly for
+        # compatibility/consistency with the Delaunay option
+        coreset.loc[i, "interpolated"] = np.sum(simplex["values"] * weights)
+        coreset.loc[i, "diff"] = np.abs(coreset.loc[i, "values"] - coreset.loc[i, "interpolated"])
+
+        if coreset.loc[i, "diff"] > accuracy_threshold:
+            new_point = np.sum(simplex[coord_list]) / (D+1)
+            new_points = pd.concat((new_points, new_point))
+
+    return points, new_points
 
 
 def _get_corners(param_space):
