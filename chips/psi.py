@@ -19,9 +19,8 @@ def build_simplex(neighbors, target):
     """
     D = neighbors.shape[1]
 
-    n_indices = np.arange(neighbors.shape[0], dtype=np.intc)
-    simplex   = np.zeros(D+1, dtype=np.intc)
-    simplex_i = 0 # current vertex to find
+    neigh_mask = np.arange(neighbors.shape[0], dtype=np.intc)
+    simplex    = np.zeros(D+1, dtype=np.intc)
 
     pneighbors = np.copy(neighbors)
     ptarget    = np.copy(target)
@@ -36,7 +35,7 @@ def build_simplex(neighbors, target):
             pnni = 0
         else:
             for i in range(pneighbors.shape[0]):
-                if n_indices[i] == -1:
+                if neigh_mask[i] == -1:
                     continue
                 # dist2 = np.power(ptarget - pneighbors[i], 2)
                 dist2 = dot(ptarget - pneighbors[i], ptarget - pneighbors[i])
@@ -45,11 +44,11 @@ def build_simplex(neighbors, target):
                     pnni = i
 
         # remove point so we won't find it at nearest neighbor with distance 0 later
-        n_indices[pnni] = -1
+        neigh_mask[pnni] = -1
 
         # The closest point must be part of the solution
-        simplex[simplex_i] = pnni
-        simplex_i += 1
+        # the simplex array is filled backwards
+        simplex[it] = pnni
 
         pnn = pneighbors[pnni]      # nearest neighbor
         # normal vector that we will use to build next projective space
@@ -58,7 +57,7 @@ def build_simplex(neighbors, target):
 
         # project
         for i in range(pneighbors.shape[0]):
-            if n_indices[i] == -1:
+            if neigh_mask[i] == -1:
                 continue
 
             # projection on pnnvec
@@ -68,68 +67,53 @@ def build_simplex(neighbors, target):
 
             # throw out half the points (on the wrong side of the projection plane)
             if dot(pnvert, pnnvec) > 0:
-                n_indices[i] = -1
+                neigh_mask[i] = -1
                 continue
 
             # project onto plane
             pneighbors[i] = pneighbors[i] - pn
 
-        # print(n_indices)
+        # print(neigh_mask)
         # Verify we still have enough neighbors to continue next iteration Last step (line) requires at least 2
-        if pneighbors.shape[0] - (n_indices == -1).sum() < 1 + it:
+        if (neigh_mask != -1).sum() < 1 + it:
             failflag = True
             break
 
-        # update pneighbors, ptarget
+        # update ptarget
         ptarget = ptarget - dot(ptarget, pnnvec) * pnnvec / pnnvec2
         it -= 1
 
     if failflag:
         return None
 
-    # all pneighbors are now on a line
-    # find nearest neighbors in both directions of the line
-    min_dist2 = np.inf
-    pnni     = -1       # projected nearest neighbor index
+    linevecflag = False
+    posmin = np.inf
+    negmax = -np.inf
+    posind = -1
+    negind = -1
     for i in range(pneighbors.shape[0]):
-        if n_indices[i] == -1:
-            continue
-        # dist2 = np.power(ptarget - pneighbors[i], 2)
-        dist2 = dot(ptarget - pneighbors[i], ptarget - pneighbors[i])
-        if dist2 < min_dist2:
-            min_dist2 = dist2
-            pnni = i
-
-    # first nearest neighbor
-    pnn = pneighbors[pnni]
-    simplex[simplex_i] = pnni
-    simplex_i += 1
-    # points from target to nn
-    pnnvec = pnn - ptarget
-
-    # find nearest neighbor in other direction
-    best_nn2_ind = None
-    best_dist2 = np.inf
-    for i in range(pneighbors.shape[0]):
-        if n_indices[i] == -1:
+        if neigh_mask[i] == -1:
             continue
 
-        # points from target to neigh
-        diffvec = pneighbors[i] - ptarget
+        if not linevecflag:
+            linevec = pneighbors[i] - ptarget
+            linevecflag = True
 
-        # point in same direction?
-        if dot(pnnvec, diffvec) > 0:
-            continue
+        tempvec = pneighbors[i] - ptarget
+        proj1d = dot(linevec, tempvec)
 
-        dist2 = dot(diffvec, diffvec)
-        if dist2 < best_dist2:
-            best_dist2 = dist2
-            best_nn2_ind = i
+        if proj1d > 0 and proj1d < posmin:
+            posmin = proj1d
+            posind = i
+        elif proj1d < 0 and proj1d > negmax:
+            negmax = proj1d
+            negind = i
 
-    if best_dist2 == np.inf:
+    if posind == -1 or negind == -1:
         return None
     else:
-        simplex[simplex_i] = best_nn2_ind
+        simplex[1] = negind
+        simplex[0] = posind
 
     return simplex
 
@@ -189,7 +173,7 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
 if __name__ == "__main__":
     from scipy.spatial import KDTree, Delaunay
     dimensions = 3
-    k = 15
+    k = 30
     N_points = 10000
     N_targets = 1000
 
@@ -217,11 +201,11 @@ if __name__ == "__main__":
             invalid += 1
             continue
 
-        # print("Simplex", simplex)
         tri = Delaunay(neighbors[simplex])
 
         if tri.find_simplex(target) == -1:
             wrong += 1
+            continue
 
     print(f"Built {N_targets} simplices on {N_points} points")
     print(f"{invalid} invalid simplices")
@@ -232,8 +216,11 @@ if __name__ == "__main__":
     print("Running in adaptive mode")
     invalid = 0
     wrong = 0
+
+    D = 3
     for i in range(N_targets):
         target = np.random.random(dimensions) + 0.5
+        _, neighbors = tree.query(target, k)
         simplex = build_simplex_adaptive(points, target, tree, k, 2, 4)
 
         if simplex is None:
@@ -244,6 +231,8 @@ if __name__ == "__main__":
 
         if tri.find_simplex(target) == -1:
             wrong += 1
+            continue
+
 
     print(f"Built {N_targets} simplices on {N_points} points")
     print(f"{invalid} invalid simplices")

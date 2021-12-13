@@ -10,6 +10,7 @@ import time
 from parse import parse
 from matplotlib import patches
 from scipy.spatial import KDTree
+from scipy.interpolate import LinearNDInterpolator
 
 sns.set()
 
@@ -643,7 +644,7 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
     :return points, new_points: Original, modified points dataframe.
                                 Dataframe containing all the new sample locations. (Not yet evaluated.)
     """
-    new_points = pd.DataFrame(columns=core)
+    new_points = pd.DataFrame(columns=coord_list)
     points["interpolated"] = np.nan
     points["diff"] = np.nan
     D = len(coord_list)
@@ -773,9 +774,8 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     for c, edges in core.items():
         coreset = coreset.loc[(coreset[c] > edges[0]) & (coreset[c] < edges[1])]
 
-    coreset = coreset.reset_index(drop=True) # important
-
-    errcounter = 0
+    psa_err_counter = 0
+    qhull_err_counter = 0
     coreset_numpy = coreset[coord_list].to_numpy()
     points_numpy  = points[coord_list].to_numpy()
     tree = KDTree(points_numpy)
@@ -786,23 +786,18 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         simplex = build_simplex_adaptive(points_numpy, point, tree, k, factor, max_steps)
 
         if simplex is None:
-            errcounter += 1
+            psa_err_counter += 1
             continue
 
-        # Is this the most efficient way of calculating the barycentric coordinates?
-        # Hell no.
-        # But its easy to program.
         simplex = points.loc[simplex]
-        tri = spatial.Delaunay(simplex[coord_list].to_numpy())
-        trafo = tri.transform[0]
-        bary = np.einsum(
-            "jk,k->j",
-            trafo[:D,:D],
-            point - trafo[D, :]
-        )
-        weights = np.append(bary, np.array([1 - bary.sum()]))
 
-        coreset.loc[i, "interpolated"] = np.sum(simplex["values"] * weights)
+        interpolator = LinearNDInterpolator(
+            simplex[coord_list].to_numpy(),
+            simplex["values"].to_numpy()
+        )
+
+        # coreset.loc[i, "interpolated"] = np.sum(simplex["values"] * weights)
+        coreset.loc[i, "interpolated"] = interpolator(point)
         coreset.loc[i, "diff"] = np.abs(coreset.loc[i, "values"] - coreset.loc[i, "interpolated"])
 
         if coreset.loc[i, "diff"] > accuracy_threshold:
@@ -813,8 +808,9 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     new_points = pd.DataFrame(new_points)
     points = points.reset_index(drop=True)
 
-    if errcounter:
-        print(f"Simplex construction failed for {errcounter} out of {coreset_numpy.shape[0]} points")
+    if psa_err_counter:
+        print(f"Projective simplex construction failed for {psa_err_counter} out of {coreset_numpy.shape[0]} points")
+
     return points, new_points
 
 
