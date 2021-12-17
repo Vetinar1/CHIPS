@@ -604,6 +604,8 @@ def sample(
             print(f"Warning: {points[points[value_list].isnull().any(axis=1)]} / {len(points.index)} points contain "
                   "NaN in their values")
 
+
+
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     print("Done")
@@ -986,14 +988,16 @@ def load_existing_raw_data(
     return points
 
 
-def load_rawdata_and_save_fractions(folder, filename, coord_list, filename_pattern=None):
+def load_rawdata_and_save_fractions(folder, filename, coord_list, filename_pattern=None, nolog10=False):
     """
     Loads raw data from given folder, saves it to csv file. Loads and saves both cooling/heating rates and fractions.
+
 
     :param folder:              Folder to load from (includes subfolders)
     :param filename:            File to save to
     :param coord_list:          Coordinates to look for
     :param filename_pattern:    Dont touch this
+    :param nolog10:             If True, do not log10 the Ctot and Htot columns
     """
 
     if not filename_pattern:
@@ -1016,6 +1020,9 @@ def load_rawdata_and_save_fractions(folder, filename, coord_list, filename_patte
         column_names=["Htot", "Ctot"]
     ).drop_duplicates()
 
+    if not nolog10:
+        cooldata.loc[:,["Htot", "Ctot"]] = np.log10(cooldata.loc[:,["Htot", "Ctot"]])
+
     fracdata = load_existing_raw_data(
         folder,
         filename_pattern,
@@ -1033,7 +1040,7 @@ def load_rawdata_and_save_fractions(folder, filename, coord_list, filename_patte
 
     merged.to_csv(os.path.expanduser(filename), index=False)
 
-    if len(points.index) != len(merged.index):
+    if len(cooldata.index) != len(merged.index):
         print("The length of the points table changed during the merge with the electron/hydrogen fractions.\n"
               "This is odd. You may want to double check the results.")
 
