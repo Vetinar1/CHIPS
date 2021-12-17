@@ -135,12 +135,13 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
     """
     break_early = False
     dists, neighbor_indices = tree.query(target, k)
-    if dists[0] < 1e-8: # epsilon
-        # one dropped value shouldnt matter except at *really* small k...
-        neighbor_indices = neighbor_indices[1:]
     if neighbor_indices.shape[0] > points.shape[0]:
         neighbor_indices = neighbor_indices[:points.shape[0]-1]
         break_early = True # no point iterating if we are already at max k
+    if dists[0] < 1e-8: # epsilon
+        # Don't find the target point itself as a neighbor
+        # one dropped value shouldnt matter except at *really* small k...
+        neighbor_indices = neighbor_indices[1:]
     neighbors = points[neighbor_indices]
 
     simplex = build_simplex(neighbors, target)
@@ -153,12 +154,11 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps):
         k *= factor
         steps += 1
         dists, neighbor_indices = tree.query(target, k)
-        if dists[0] < 1e-8: # epsilon
-            # one dropped value shouldnt matter except at *really* small k...
-            neighbor_indices = neighbor_indices[1:]
         if neighbor_indices.shape[0] > points.shape[0]:
             neighbor_indices = neighbor_indices[:points.shape[0]-1]
             break_early = True
+        if dists[0] < 1e-8: # epsilon
+            neighbor_indices = neighbor_indices[1:]
 
         neighbors = points[neighbor_indices]
 

@@ -592,12 +592,17 @@ def sample(
         points = points.drop("values", axis=1)
         print("save_fractions == true, Loading and merging hydrogen and electron fractions")
 
+        dfs = []
         for i in range(iteration):
-            right = pd.read_csv(os.path.join(output_folder, f"iteration{iteration - 1}", f"it{iteration - 1}.points"))
-            points = points.merge(right, how="left", on=coord_list)
+            dfs.append(
+                pd.read_csv(os.path.join(output_folder, f"iteration{iteration - 1}", f"it{iteration - 1}.points"))
+            )
+
+        dfs = pd.concat(dfs, ignore_index=True)
+        points = points.merge(dfs, how="inner", on=coord_list)
 
         if points[coord_list].isnull().values.any():
-            print(f"Warning: {points[points[coord_list].isnull().any(axis=1)]} / {len(points.index)} points contain "
+            print(f"Warning: {len(points[points[coord_list].isnull().any(axis=1)].index)} / {len(points.index)} points contain "
                   "NaN in their coordinates")
 
         value_list = ["Htot", "Ctot"] + ["ne", "H2", "HI", "HII", "HeI", "HeII", "HeIII"]
@@ -605,12 +610,9 @@ def sample(
             print(f"Warning: {points[points[value_list].isnull().any(axis=1)]} / {len(points.index)} points contain "
                   "NaN in their values")
 
-
-
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     print("Done")
-
     return points
 
 
