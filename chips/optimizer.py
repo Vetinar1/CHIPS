@@ -473,7 +473,8 @@ def sample(
                         os.remove(os.path.join(folder, fname))
             if cleanup == "full":
                 for fname in os.listdir(folder):
-                    os.remove(os.path.join(folder, fname))
+                    if not fname.endswith(".points"):
+                        os.remove(os.path.join(folder, fname))
 
             print("Cleanup complete")
 
@@ -750,7 +751,6 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     :return:                    points: Original, modified dataframe
                                 new_points: Dataframe containing all the new sample locations
     """
-    # new_points = pd.DataFrame(columns=core)
     points["interpolated"] = np.nan
     points["diff"] = np.nan
     D = len(coord_list)
@@ -762,7 +762,6 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         coreset = coreset.loc[(coreset[c] > edges[0]) & (coreset[c] < edges[1])]
 
     psa_err_counter = 0
-    qhull_err_counter = 0
     coreset_numpy = coreset[coord_list].to_numpy()
     points_numpy  = points[coord_list].to_numpy()
     tree = KDTree(points_numpy)
@@ -991,7 +990,6 @@ def load_existing_raw_data(
 def load_rawdata_and_save_fractions(folder, filename, coord_list, filename_pattern=None, nolog10=False):
     """
     Loads raw data from given folder, saves it to csv file. Loads and saves both cooling/heating rates and fractions.
-
 
     :param folder:              Folder to load from (includes subfolders)
     :param filename:            File to save to
