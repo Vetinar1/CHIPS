@@ -457,6 +457,13 @@ def sample(
         if plot_iterations:
             _plot_parameter_space(points, new_points, coord_list, output_folder, iteration)
 
+        print("Saving intermediate .points file...")
+        load_rawdata_and_save_fractions(
+            folder=os.path.join(output_folder, f"iteration{iteration - 1}"),
+            filename=os.path.join(output_folder, f"iteration{iteration - 1}", f"it{iteration - 1}.points"),
+            coord_list=coord_list
+        )
+
         if cleanup:
             print("Performing cleanup, mode:", cleanup)
             folder = os.path.join(output_folder, f"iteration{iteration - 1}")
@@ -559,7 +566,7 @@ def sample(
     total_time_readable = seconds_to_human_readable(total_time)
 
     print()
-    print(f"Run complete; Calculated at least {existing_point_count - len(points.index)} new points " +
+    print(f"Run complete; Calculated at least {len(points.index) - existing_point_count} new points " +
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
     points = points.drop(["interpolated", "diff"], axis=1)
@@ -579,47 +586,25 @@ def sample(
     if save_triangulation:
         np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
         np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
-    points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     if save_fractions:
         points = points.drop("values", axis=1)
         print("save_fractions == true, Loading and merging hydrogen and electron fractions")
 
-        vals = fracs = load_existing_raw_data(
-            output_folder,
-            filename_pattern,
-            coord_list,
-            [2, 3],
-            file_ending=".cool",
-            column_names=["Htot", "Ctot"]
-        ).drop_duplicates()
+        for i in range(iteration):
+            right = pd.read_csv(os.path.join(output_folder, f"iteration{iteration - 1}", f"it{iteration - 1}.points"))
+            points = points.merge(right, how="left", on=coord_list)
 
-        fracs = fracs = load_existing_raw_data(
-            output_folder,
-            filename_pattern,
-            coord_list,
-            [4, 5, 6, 7, 8, 9, 10],
-            file_ending=".overview",
-            column_names=["ne", "H2", "HI", "HII", "HeI", "HeII", "HeIII"]
-        ).drop_duplicates()
+        if points[coord_list].isnull().values.any():
+            print(f"Warning: {points[points[coord_list].isnull().any(axis=1)]} / {len(points.index)} points contain "
+                  "NaN in their coordinates")
 
-        points = points.drop_duplicates()
-        merged = points.merge(
-            vals,
-            "inner",
-            on=coord_list
-        )
-        merged = merged.merge(
-            fracs,
-            "inner",
-            on=coord_list
-        )
+        value_list = ["Htot", "Ctot"] + ["ne", "H2", "HI", "HII", "HeI", "HeII", "HeIII"]
+        if points[value_list].isnull().values.any():
+            print(f"Warning: {points[points[value_list].isnull().any(axis=1)]} / {len(points.index)} points contain "
+                  "NaN in their values")
 
-        merged.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
-
-        if len(points.index) != len(merged.index):
-            print("The length of the points table changed during the merge with the electron/hydrogen fractions.\n"
-                  "This is odd. You may want to double check the results and make sure the triangulation didnt break.")
+    points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
     print("Done")
 
@@ -999,6 +984,58 @@ def load_existing_raw_data(
 
     points = pd.DataFrame(points).astype(float)
     return points
+
+
+def load_rawdata_and_save_fractions(folder, filename, coord_list, filename_pattern=None):
+    """
+    Loads raw data from given folder, saves it to csv file. Loads and saves both cooling/heating rates and fractions.
+
+    :param folder:              Folder to load from (includes subfolders)
+    :param filename:            File to save to
+    :param coord_list:          Coordinates to look for
+    :param filename_pattern:    Dont touch this
+    """
+
+    if not filename_pattern:
+        filename_pattern = "__".join(
+            ["_".join(
+                [c, "{" + str(c) + "}"]
+            ) for c in coord_list]
+        )
+    else:
+        for c in coord_list:
+            if "{" + str(c) + "}" not in filename_pattern:
+                raise RuntimeError(f"Invalid file pattern: Missing {c}")
+
+    cooldata = load_existing_raw_data(
+        folder,
+        filename_pattern,
+        coord_list,
+        [2, 3],
+        file_ending=".cool",
+        column_names=["Htot", "Ctot"]
+    ).drop_duplicates()
+
+    fracdata = load_existing_raw_data(
+        folder,
+        filename_pattern,
+        coord_list,
+        [4, 5, 6, 7, 8, 9, 10],
+        file_ending=".overview",
+        column_names=["ne", "H2", "HI", "HII", "HeI", "HeII", "HeIII"]
+    ).drop_duplicates()
+
+    merged = cooldata.merge(
+        fracdata,
+        "inner",
+        on=coord_list
+    )
+
+    merged.to_csv(os.path.expanduser(filename), index=False)
+
+    if len(points.index) != len(merged.index):
+        print("The length of the points table changed during the merge with the electron/hydrogen fractions.\n"
+              "This is odd. You may want to double check the results.")
 
 
 def _set_up_grid(num_per_dim, parameter_space, margins, perturbation_scale=None):
