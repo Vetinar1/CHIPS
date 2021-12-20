@@ -92,14 +92,15 @@ def sample_simplex(simplex):
     return point
 
 
-def drop_duplicates_and_print(points):
+def drop_duplicates_and_print(points, coord_list):
     """
     Drops duplicates from dataframe in place and prints to stdout if any were dropped.
     :param points:
+    :param coord_list:
     :return:
     """
     len_pre_drop =  len(points.index)
-    points = points.drop_duplicates(ignore_index=True)
+    points = points.drop_duplicates(ignore_index=True, subset=coord_list)
     len_post_drop = len(points.index)
     n_dropped = len_pre_drop - len_post_drop
 

@@ -408,14 +408,15 @@ def sample(
         iteration += 1
         print("{:*^50}".format(f"Iteration {iteration}"))
 
-        drop_duplicates_and_print(points)
+        drop_duplicates_and_print(points, coord_list)
+        points = points.reset_index(drop=True)
 
         timeA = time.time()
         if mode == "Delaunay":
             points, new_points = sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold)
         elif mode == "PSI":
             points, new_points = sample_step_psi(points, coord_list, core, accuracy_threshold, psi_nearest_neighbors,
-                                                 psi_nn_factor, psi_max_tries)
+                                                 psi_nn_factor, psi_max_tries, n_jobs)
         else:
             print("Invalid mode. Something went wrong.")
             exit()
@@ -554,7 +555,7 @@ def sample(
             interp_column,
             use_net_cooling
         )
-        points = pd.concat((points, new_points)).drop_duplicates().reset_index(drop=True)
+        points = pd.concat((points, new_points)).drop_duplicates(subset=coord_list).reset_index(drop=True)
 
         print(f"{round(time.time() - time3, 2)}s to evaluate new points")
         print(f"Total time: {seconds_to_human_readable(round(time.time() - timeBeginLoop, 2))}")
@@ -643,13 +644,13 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
         assert(not points.index.duplicated().any())
         # TODO This part uses a lot of deep copies, might be inefficient
         subset = points.loc[partition::n_partitions].copy(deep=True)
-        bigset = pd.concat((points, subset)).drop_duplicates(keep=False)
+        bigset = pd.concat((points, subset)).drop_duplicates(keep=False, subset=coord_list)
 
         subset.loc[:,"interpolated"] = np.nan
 
         # Always include corners to ensure convex hull
         bigset = pd.concat((bigset, corners))
-        bigset = bigset.drop_duplicates()
+        bigset = bigset.drop_duplicates(subset=coord_list)
 
         # Need to reset the bigset index due to the concatenation
         # Since the bigset index is not relevant again - unlike the subset index - this should be fine
@@ -732,7 +733,7 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
     return points, new_points
 
 
-def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps):
+def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps, n_jobs):
     """
     Do one sampling step using the PSI algorithm.
     https://arxiv.org/abs/2109.13926
@@ -743,6 +744,8 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     3. Use simplex to interpolate
     4. If difference to interpolated value is over threshold, add center of simplex as new sample
 
+    Drops duplicates and resets index of points.
+
     :param points:              Pandas dataframe. Modified in-place.
     :param coord_list:          List of coordinates (names)
     :param core:                Dict describing the extents of the core of the parameter space, see sample()
@@ -750,9 +753,15 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     :param k:                   Number of nearest neighbors to use
     :param factor:              If PSI fails, multiply k with this and try again
     :param max_steps:           Retry this many times
+    :param n_jobs:              Number of jobs to run at once
     :return:                    points: Original, modified dataframe
                                 new_points: Dataframe containing all the new sample locations
     """
+
+    points = points.drop_duplicates(ignore_index=True, subset=coord_list)
+    points = points.reset_index(drop=True)  # looks redundant but is necessary to turn points into a true dataframe
+                                            # instead of a slice...
+
     points["interpolated"] = np.nan
     points["diff"] = np.nan
     D = len(coord_list)
@@ -771,7 +780,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
 
     for i, row in coreset.iterrows():
         point = row[coord_list].to_numpy()
-        simplex = build_simplex_adaptive(points_numpy, point, tree, k, factor, max_steps)
+        simplex = build_simplex_adaptive(points_numpy, point, tree, k, factor, max_steps, n_jobs)
 
         if simplex is None:
             psa_err_counter += 1
