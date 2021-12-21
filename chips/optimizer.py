@@ -773,6 +773,8 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         coreset = coreset.loc[(coreset[c] > edges[0]) & (coreset[c] < edges[1])]
 
     psa_err_counter = 0
+    psa_err_counter2 = 0
+    qhull_errors = 0
     coreset_numpy = coreset[coord_list].to_numpy()
     points_numpy  = points[coord_list].to_numpy()
     tree = KDTree(points_numpy)
@@ -784,14 +786,22 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
 
         if simplex is None:
             psa_err_counter += 1
-            continue
+            simplex = build_simplex_adaptive(points_numpy, point, tree, int(k/2), factor, max_steps, n_jobs, smart_nn=True)
+
+            if simplex is None:
+                psa_err_counter2 += 1
+                continue
 
         simplex = points.loc[simplex]
 
-        interpolator = LinearNDInterpolator(
-            simplex[coord_list].to_numpy(),
-            simplex["values"].to_numpy()
-        )
+        try:
+            interpolator = LinearNDInterpolator(
+                simplex[coord_list].to_numpy(),
+                simplex["values"].to_numpy()
+            )
+        except:
+            qhull_errors += 1
+            continue
 
         # coreset.loc[i, "interpolated"] = np.sum(simplex["values"] * weights)
         coreset.loc[i, "interpolated"] = interpolator(point)
@@ -807,6 +817,10 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
 
     if psa_err_counter:
         print(f"Projective simplex construction failed for {psa_err_counter} out of {coreset_numpy.shape[0]} points")
+    if psa_err_counter2:
+        print(f"Fallback option failed for {psa_err_counter2} out of remaining {psa_err_counter} points")
+    if qhull_errors:
+        print(f"Encountered {qhull_errors} QHull errors")
 
     return points, new_points
 

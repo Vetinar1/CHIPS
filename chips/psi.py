@@ -1,25 +1,31 @@
 import numba
 import numpy as np
+import matplotlib.pyplot as plt
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, parallel=True)
 def dot(vec1, vec2):
     return np.sum(vec1 * vec2)
 
 
+# TODO Rewrite to be parallel
 @numba.jit(nopython=True)
-def build_simplex(neighbors, target):
+def build_simplex(neighbors, target, smart_nn=False):
     """
     Numba friendly implementation of the projective simplex construction algorithm described in
     https://arxiv.org/abs/2109.13926
 
     :param neighbors:   2D numpy array of points
     :param target:      1D numpy array containing target point
+    :param smart_nn:    Instead of picking the nearest neighbor, pick the neighbor that is furthest from the
+                        center of mass of the point cloud. Useful for lopsided point distributions. # TODO document
     :return:            Numpy array with indices of simplex in neighbors or None if no simplex could be built
     """
     D = neighbors.shape[1]
 
     neigh_mask = np.arange(neighbors.shape[0], dtype=np.intc)
+    diffvecs   = np.zeros(neighbors.shape)
+    dot_prods  = np.zeros(neighbors.shape[0])
     simplex    = np.zeros(D+1, dtype=np.intc)
 
     pneighbors = np.copy(neighbors)
@@ -31,17 +37,29 @@ def build_simplex(neighbors, target):
         # Find nearest neighbor in projective space
         min_dist2 = np.inf
         pnni      = -1       # projected nearest neighbor index
-        if it == D:
-            pnni = 0
-        else:
+        if smart_nn:
+            nn_candidates = 0
             for i in range(pneighbors.shape[0]):
                 if neigh_mask[i] == -1:
+                    diffvecs[i] = 0
                     continue
-                # dist2 = np.power(ptarget - pneighbors[i], 2)
-                dist2 = dot(ptarget - pneighbors[i], ptarget - pneighbors[i])
-                if dist2 < min_dist2:
-                    min_dist2 = dist2
-                    pnni = i
+                diffvecs[i] = pneighbors[i] - ptarget
+                nn_candidates += 1
+
+            mean_vec = np.sum(diffvecs, axis=0) / nn_candidates
+            dot_prods = np.dot(diffvecs, mean_vec)
+            pnni = np.argmin(dot_prods)
+        else:
+            if it == D and not smart_nn:
+                pnni = 0
+            else:
+                for i in range(pneighbors.shape[0]):
+                    if neigh_mask[i] == -1:
+                        continue
+                    dist2 = dot(ptarget - pneighbors[i], ptarget - pneighbors[i])
+                    if dist2 < min_dist2:
+                        min_dist2 = dist2
+                        pnni = i
 
         # remove point so we won't find it at nearest neighbor with distance 0 later
         neigh_mask[pnni] = -1
@@ -118,7 +136,7 @@ def build_simplex(neighbors, target):
     return simplex
 
 
-def build_simplex_adaptive(points, target, tree, k, factor, max_steps, jobs=1):
+def build_simplex_adaptive(points, target, tree, k, factor, max_steps, jobs=1, smart_nn=False):
     """
     Adaptive interface for build_simplex. Automatically increases k if the algorithm fails.
 
@@ -145,7 +163,7 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps, jobs=1):
         neighbor_indices = neighbor_indices[1:]
 
     neighbors = points[neighbor_indices]
-    simplex = build_simplex(neighbors, target)
+    simplex = build_simplex(neighbors, target, smart_nn)
 
     steps = 0
     while simplex is None and steps < max_steps:
@@ -162,7 +180,7 @@ def build_simplex_adaptive(points, target, tree, k, factor, max_steps, jobs=1):
             neighbor_indices = neighbor_indices[1:]
 
         neighbors = points[neighbor_indices]
-        simplex = build_simplex(neighbors, target)
+        simplex = build_simplex(neighbors, target, smart_nn)
 
     if simplex is not None:
         return neighbor_indices[simplex]
