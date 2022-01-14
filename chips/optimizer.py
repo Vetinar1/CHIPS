@@ -56,6 +56,7 @@ def sample(
         psi_nn_factor=2,
         psi_max_tries=4,
 
+        use_density_weights=True,
 
         max_iterations=20,
         max_storage_gb=10,
@@ -134,6 +135,14 @@ def sample(
                                             fails. Has no effect if mode is "Delaunay".
     :param psi_max_tries:                   Maximum number of retries if simplex construction algorithm fails. Has no
                                             effect if mode is "Delaunay".
+    :param use_density_weights:             If this option is enabled the interpolation error is additionally weighted
+                                            using the mean distance to neighboring points. In principle this is
+                                            antithetical to the core design of the algorithm, and provides an automatic
+                                            brake or "rubber band" effect. It is primarily useful when dealing with
+                                            (near) discontinuities in the data (i.e. the ionization of hydrogen at 1e4K)
+                                            The current implementation is a naive one and assumes that the distance to
+                                            neighbors are of order 1 in the parameter space. TODO
+                                            TODO implement for delaunay as well
     :param max_iterations:                  Exit condition: Quit after this many iterations
     :param max_storage_gb:                  Exit condition: Quit after this much storage space has been used
     :param max_time:                        Exit condition: Quit after this much time (seconds).
@@ -733,7 +742,7 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
     return points, new_points
 
 
-def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps, n_jobs):
+def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps, n_jobs, use_density_weights):
     """
     Do one sampling step using the PSI algorithm.
     https://arxiv.org/abs/2109.13926
@@ -754,6 +763,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     :param factor:              If PSI fails, multiply k with this and try again
     :param max_steps:           Retry this many times
     :param n_jobs:              Number of jobs to run at once
+    :param use_density_weights: Use mean distance to nearest neighbors to weight errors
     :return:                    points: Original, modified dataframe
                                 new_points: Dataframe containing all the new sample locations
     """
@@ -806,6 +816,15 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         # coreset.loc[i, "interpolated"] = np.sum(simplex["values"] * weights)
         coreset.loc[i, "interpolated"] = interpolator(point)
         coreset.loc[i, "diff"] = np.abs(coreset.loc[i, "values"] - coreset.loc[i, "interpolated"])
+
+        if use_density_weights:
+            _, neighbors = tree.query(point, k=10)
+            # neighbors = points_numpy[neighbors[1:]] - point
+            mean_dist = np.mean(np.sqrt(np.sum(np.square(points_numpy[neighbors[1:]] - point), axis=1)))
+
+            coreset.loc[i, "diff"] *= mean_dist
+
+            # TODO do this entire thing after loop, and normalize the weights across all samples
 
         if coreset.loc[i, "diff"] > accuracy_threshold:
             new_point = np.sum(simplex[coord_list]) / (D+1)

@@ -17,8 +17,9 @@ def build_simplex(neighbors, target, smart_nn=False):
 
     :param neighbors:   2D numpy array of points
     :param target:      1D numpy array containing target point
-    :param smart_nn:    Instead of picking the nearest neighbor, pick the neighbor that is furthest from the
-                        center of mass of the point cloud. Useful for lopsided point distributions. # TODO document
+    :param smart_nn:    If this option is enabled, the first chosen nearest neighbor will not actually be the *nearest*.
+                        Instead it will be chosen such that as many points as possible remain after the first projection
+                        step. This massively improves the chances of success for lopsided point distributions.
     :return:            Numpy array with indices of simplex in neighbors or None if no simplex could be built
     """
     D = neighbors.shape[1]
@@ -49,17 +50,16 @@ def build_simplex(neighbors, target, smart_nn=False):
             mean_vec = np.sum(diffvecs, axis=0) / nn_candidates
             dot_prods = np.dot(diffvecs, mean_vec)
             pnni = np.argmin(dot_prods)
+        elif it == D and not smart_nn:
+            pnni = 0
         else:
-            if it == D and not smart_nn:
-                pnni = 0
-            else:
-                for i in range(pneighbors.shape[0]):
-                    if neigh_mask[i] == -1:
-                        continue
-                    dist2 = dot(ptarget - pneighbors[i], ptarget - pneighbors[i])
-                    if dist2 < min_dist2:
-                        min_dist2 = dist2
-                        pnni = i
+            for i in range(pneighbors.shape[0]):
+                if neigh_mask[i] == -1:
+                    continue
+                dist2 = dot(ptarget - pneighbors[i], ptarget - pneighbors[i])
+                if dist2 < min_dist2:
+                    min_dist2 = dist2
+                    pnni = i
 
         # remove point so we won't find it at nearest neighbor with distance 0 later
         neigh_mask[pnni] = -1
