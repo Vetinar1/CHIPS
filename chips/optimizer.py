@@ -596,7 +596,7 @@ def sample(
         dfs = []
         for i in range(iteration):
             dfs.append(
-                pd.read_csv(os.path.join(output_folder, f"iteration{iteration - 1}", f"it{iteration - 1}.points"))
+                pd.read_csv(os.path.join(output_folder, f"iteration{i}", f"it{i}.points"))
             )
 
         dfs = pd.concat(dfs, ignore_index=True)
@@ -870,7 +870,7 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
         hue="hue",
         markers="o",
         plot_kws={
-            "s":1,
+            "s":4,
             "marker":"o",
             "edgecolor":None
         },

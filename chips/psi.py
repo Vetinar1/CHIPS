@@ -37,7 +37,7 @@ def build_simplex(neighbors, target, smart_nn=False):
         # Find nearest neighbor in projective space
         min_dist2 = np.inf
         pnni      = -1       # projected nearest neighbor index
-        if smart_nn:
+        if smart_nn and it == D:
             nn_candidates = 0
             for i in range(pneighbors.shape[0]):
                 if neigh_mask[i] == -1:
