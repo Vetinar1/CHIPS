@@ -838,7 +838,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         for i in range(coreset_numpy.shape[0]):
             neigh_coords = points_numpy[neighbors[i]]
             coreset.loc[i, "mean_dist"] = np.mean(
-                np.sqrt(np.sum(np.square(points_numpy[neigh_coords] - coreset_numpy[i]), axis=1)) # pythagoras
+                np.sqrt(np.sum(np.square(neigh_coords - coreset_numpy[i]), axis=1)) # pythagoras
             )
 
         # normalize values to around 1
