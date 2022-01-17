@@ -56,7 +56,7 @@ def sample(
         psi_nn_factor=2,
         psi_max_tries=4,
 
-        use_density_weights=True,
+        use_mdistance_weights=True,
 
         max_iterations=20,
         max_storage_gb=10,
@@ -135,14 +135,18 @@ def sample(
                                             fails. Has no effect if mode is "Delaunay".
     :param psi_max_tries:                   Maximum number of retries if simplex construction algorithm fails. Has no
                                             effect if mode is "Delaunay".
-    :param use_density_weights:             If this option is enabled the interpolation error is additionally weighted
+    :param use_mdistance_weights:           If this option is enabled the interpolation error is additionally weighted
                                             using the mean distance to neighboring points. In principle this is
                                             antithetical to the core design of the algorithm, and provides an automatic
                                             brake or "rubber band" effect. It is primarily useful when dealing with
                                             (near) discontinuities in the data (i.e. the ionization of hydrogen at 1e4K)
-                                            The current implementation is a naive one and assumes that the distance to
-                                            neighbors are of order 1 in the parameter space. TODO
-                                            TODO implement for delaunay as well
+                                            The current implementation normalizes the weights such that the halfway
+                                            point between minimum and maximum mean distance gives a weighting factor of
+                                            1. The assumption is that if a discontinuity occurs, the majority of points
+                                            are going to be in a dense cloud with low mean distance, and thus that the
+                                            distribution has the majority of points as well as its peak to the left
+                                            of the halfway point.
+                                            This option currently has no effect when using Delaunay simplices.
     :param max_iterations:                  Exit condition: Quit after this many iterations
     :param max_storage_gb:                  Exit condition: Quit after this much storage space has been used
     :param max_time:                        Exit condition: Quit after this much time (seconds).
@@ -425,7 +429,7 @@ def sample(
             points, new_points = sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold)
         elif mode == "PSI":
             points, new_points = sample_step_psi(points, coord_list, core, accuracy_threshold, psi_nearest_neighbors,
-                                                 psi_nn_factor, psi_max_tries, n_jobs)
+                                                 psi_nn_factor, psi_max_tries, n_jobs, use_mdistance_weights)
         else:
             print("Invalid mode. Something went wrong.")
             exit()
@@ -461,6 +465,12 @@ def sample(
         print("Points in margins".ljust(50), outside_bounds_count)
         print(f"Points in core over threshold ({accuracy_threshold})".ljust(50), over_thresh_count,
               f"/ {in_bounds_count} ({round(over_thresh_fraction*100, 2)}%)")
+        if use_mdistance_weights:
+            unadjusted_over_thresh_count = len(points[points['diff_orig'] > accuracy_threshold].index)
+            print(f"\tIf use_mdistance_weights were False, {unadjusted_over_thresh_count}"
+                  f" / {in_bounds_count} were over threshold ("
+                  f"{round(unadjusted_over_thresh_count / in_bounds_count, 2)}%"
+                  f")")
         print("Number of new samples".ljust(50), len(new_points.index))
         print("Largest interpolation error".ljust(50), max_diff)
 
@@ -548,6 +558,8 @@ def sample(
         new_points = pd.concat((new_points, pd.DataFrame(random_points)))
 
         points = points.drop(["interpolated", "diff"], axis=1)
+        if use_mdistance_weights:
+            points = points.drop("diff_orig", axis=1)
         new_points["values"] = np.nan
         if significant_digits is not None:
             new_points = new_points.round(significant_digits)
@@ -742,7 +754,7 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
     return points, new_points
 
 
-def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps, n_jobs, use_density_weights):
+def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps, n_jobs, use_mdistance_weights):
     """
     Do one sampling step using the PSI algorithm.
     https://arxiv.org/abs/2109.13926
@@ -755,17 +767,17 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
 
     Drops duplicates and resets index of points.
 
-    :param points:              Pandas dataframe. Modified in-place.
-    :param coord_list:          List of coordinates (names)
-    :param core:                Dict describing the extents of the core of the parameter space, see sample()
-    :param accuracy_threshold:  float
-    :param k:                   Number of nearest neighbors to use
-    :param factor:              If PSI fails, multiply k with this and try again
-    :param max_steps:           Retry this many times
-    :param n_jobs:              Number of jobs to run at once
-    :param use_density_weights: Use mean distance to nearest neighbors to weight errors
-    :return:                    points: Original, modified dataframe
-                                new_points: Dataframe containing all the new sample locations
+    :param points:                  Pandas dataframe. Modified in-place.
+    :param coord_list:              List of coordinates (names)
+    :param core:                    Dict describing the extents of the core of the parameter space, see sample()
+    :param accuracy_threshold:      float
+    :param k:                       Number of nearest neighbors to use
+    :param factor:                  If PSI fails, multiply k with this and try again
+    :param max_steps:               Retry this many times
+    :param n_jobs:                  Number of jobs to run at once
+    :param use_mdistance_weights:   Use mean distance to nearest neighbors to weight errors
+    :return:                        points: Original, modified dataframe
+                                    new_points: Dataframe containing all the new sample locations
     """
 
     points = points.drop_duplicates(ignore_index=True, subset=coord_list)
@@ -788,7 +800,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     coreset_numpy = coreset[coord_list].to_numpy()
     points_numpy  = points[coord_list].to_numpy()
     tree = KDTree(points_numpy)
-    new_points = []
+    new_points = np.zeros_like(points_numpy)
 
     for i, row in coreset.iterrows():
         point = row[coord_list].to_numpy()
@@ -817,21 +829,29 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         coreset.loc[i, "interpolated"] = interpolator(point)
         coreset.loc[i, "diff"] = np.abs(coreset.loc[i, "values"] - coreset.loc[i, "interpolated"])
 
-        if use_density_weights:
-            _, neighbors = tree.query(point, k=10)
-            # neighbors = points_numpy[neighbors[1:]] - point
-            mean_dist = np.mean(np.sqrt(np.sum(np.square(points_numpy[neighbors[1:]] - point), axis=1)))
+        new_points[i] = np.sum(simplex[coord_list]) / (D+1)
 
-            coreset.loc[i, "diff"] *= mean_dist
+    if use_mdistance_weights:
+        _, neighbors = tree.query(coreset_numpy, k=11)
+        neighbors = neighbors[:,1:]     # first nn is self
 
-            # TODO do this entire thing after loop, and normalize the weights across all samples
+        for i in range(coreset_numpy.shape[0]):
+            neigh_coords = points_numpy[neighbors[i]]
+            coreset.loc[i, "mean_dist"] = np.mean(
+                np.sqrt(np.sum(np.square(points_numpy[neigh_coords] - coreset_numpy[i]), axis=1)) # pythagoras
+            )
 
-        if coreset.loc[i, "diff"] > accuracy_threshold:
-            new_point = np.sum(simplex[coord_list]) / (D+1)
-            new_points.append(new_point)
+        # normalize values to around 1
+        normfactor = (coreset["mean_dist"].max() - coreset["mean_dist"].min()) / 2
+        coreset["mean_dist"] = coreset["mean_dist"] / normfactor
+        coreset["diff_orig"] = coreset["diff"]
+        coreset["diff"]      = coreset["mean_dist"]
 
+    # decide which new points to keep
+    new_points = pd.DataFrame(new_points[(coreset["diff"] > 2).to_numpy()])
+
+    # write interpolation back from the core data set into the full data set
     points.loc[coreset.index, ["interpolated", "diff"]] = coreset.loc[:, ["interpolated", "diff"]]
-    new_points = pd.DataFrame(new_points)
     points = points.reset_index(drop=True)
 
     if psa_err_counter:
