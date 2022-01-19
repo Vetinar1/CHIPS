@@ -467,9 +467,10 @@ def sample(
               f"/ {in_bounds_count} ({round(over_thresh_fraction*100, 2)}%)")
         if use_mdistance_weights:
             unadjusted_over_thresh_count = len(points[points['diff_orig'] > accuracy_threshold].index)
+            unadjusted_over_thresh_fraction = unadjusted_over_thresh_count / in_bounds_count
             print(f"\tIf use_mdistance_weights were False, {unadjusted_over_thresh_count}"
                   f" / {in_bounds_count} were over threshold ("
-                  f"{round(unadjusted_over_thresh_count / in_bounds_count, 2)}%"
+                  f"{round(100 * unadjusted_over_thresh_fraction, 2)}%"
                   f")")
         print("Number of new samples".ljust(50), len(new_points.index))
         print("Largest interpolation error".ljust(50), max_diff)
@@ -502,6 +503,8 @@ def sample(
         # Check the various conditions for quitting
         threshold_condition = False
         if error_fraction is None or over_thresh_fraction < error_fraction:
+            threshold_condition = True
+        elif use_mdistance_weights and unadjusted_over_thresh_fraction < error_fraction:
             threshold_condition = True
 
         max_diff_condition = False
@@ -801,6 +804,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     points_numpy  = points[coord_list].to_numpy()
     tree = KDTree(points_numpy)
     new_points = np.zeros_like(points_numpy)
+    new_points[:] = np.nan
 
     for i, row in coreset.iterrows():
         point = row[coord_list].to_numpy()
@@ -825,19 +829,18 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
             qhull_errors += 1
             continue
 
-        # coreset.loc[i, "interpolated"] = np.sum(simplex["values"] * weights)
         coreset.loc[i, "interpolated"] = interpolator(point)
-        coreset.loc[i, "diff"] = np.abs(coreset.loc[i, "values"] - coreset.loc[i, "interpolated"])
-
         new_points[i] = np.sum(simplex[coord_list]) / (D+1)
 
+    coreset["diff"] = np.abs(coreset["values"] - coreset["interpolated"])
     if use_mdistance_weights:
         _, neighbors = tree.query(coreset_numpy, k=11)
         neighbors = neighbors[:,1:]     # first nn is self
 
         for i in range(coreset_numpy.shape[0]):
+            index = coreset.index.values[i]
             neigh_coords = points_numpy[neighbors[i]]
-            coreset.loc[i, "mean_dist"] = np.mean(
+            coreset.loc[index, "mean_dist"] = np.mean(
                 np.sqrt(np.sum(np.square(neigh_coords - coreset_numpy[i]), axis=1)) # pythagoras
             )
 
@@ -845,13 +848,18 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         normfactor = (coreset["mean_dist"].max() - coreset["mean_dist"].min()) / 2
         coreset["mean_dist"] = coreset["mean_dist"] / normfactor
         coreset["diff_orig"] = coreset["diff"]
-        coreset["diff"]      = coreset["mean_dist"]
+        coreset["diff"]      *= coreset["mean_dist"]
 
     # decide which new points to keep
-    new_points = pd.DataFrame(new_points[(coreset["diff"] > 2).to_numpy()])
+    indices = (coreset["diff"] > accuracy_threshold).index
+    new_points = pd.DataFrame(new_points[indices.to_numpy()], columns=coord_list)
+    new_points = new_points.dropna()
 
     # write interpolation back from the core data set into the full data set
     points.loc[coreset.index, ["interpolated", "diff"]] = coreset.loc[:, ["interpolated", "diff"]]
+    if use_mdistance_weights:
+        points.loc[coreset.index, "diff_orig"] = coreset.loc[:, "diff_orig"]
+
     points = points.reset_index(drop=True)
 
     if psa_err_counter:
