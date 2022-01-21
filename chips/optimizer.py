@@ -598,22 +598,10 @@ def sample(
     points = points.drop(["interpolated", "diff"], axis=1)
     if use_mdistance_weights:
         points = points.drop("diff_orig", axis=1)
-
-    print("Building and saving final Delaunay triangulation...")
-    points.to_csv(os.path.join(output_folder, output_filename + ".fullpoints"), index=False)
-    # drop margins
-    for coord in core.items():
-        points = points[points[coord[0]] >= coord[1][0]]
-        points = points[points[coord[0]] <= coord[1][1]]
-
-    tri = spatial.Delaunay(points[coord_list].to_numpy())
     # *Somewhere* an index column is added and I don't know where. Get rid off it before saving.
     # update: i think i fixed it but lets keep it just in case
     if "index" in points.columns:
         points = points.drop("index", axis=1)
-    if save_triangulation:
-        np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
-        np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
 
     if save_fractions:
         points = points.drop("values", axis=1)
@@ -636,6 +624,19 @@ def sample(
         if points[value_list].isnull().values.any():
             print(f"Warning: {points[points[value_list].isnull().any(axis=1)]} / {len(points.index)} points contain "
                   "NaN in their values")
+
+    print("Building and saving final Delaunay triangulation...")
+    points.to_csv(os.path.join(output_folder, output_filename + ".fullpoints"), index=False)
+
+    # drop margins
+    for coord in core.items():
+        points = points[points[coord[0]] >= coord[1][0]]
+        points = points[points[coord[0]] <= coord[1][1]]
+
+    tri = spatial.Delaunay(points[coord_list].to_numpy())
+    if save_triangulation:
+        np.savetxt(os.path.join(output_folder, output_filename + ".tris"), tri.simplices.astype(int), delimiter=sep, fmt="%i")
+        np.savetxt(os.path.join(output_folder, output_filename + ".neighbors"), tri.neighbors.astype(int), delimiter=sep, fmt="%i")
 
     points.to_csv(os.path.join(output_folder, output_filename + ".points"), index=False)
 
