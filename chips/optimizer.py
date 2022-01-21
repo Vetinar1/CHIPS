@@ -596,6 +596,8 @@ def sample(
           f"({existing_point_count} initially loaded, {len(points.index)} total). Time to complete: " + total_time_readable)
 
     points = points.drop(["interpolated", "diff"], axis=1)
+    if use_mdistance_weights:
+        points = points.drop("diff_orig", axis=1)
 
     print("Building and saving final Delaunay triangulation...")
     points.to_csv(os.path.join(output_folder, output_filename + ".fullpoints"), index=False)
@@ -845,7 +847,7 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
             )
 
         # normalize values to around 1
-        normfactor = (coreset["mean_dist"].max() - coreset["mean_dist"].min()) / 2
+        normfactor = (coreset["mean_dist"].quantile(0.99) + coreset["mean_dist"].min()) / 2
         coreset["mean_dist"] = coreset["mean_dist"] / normfactor
         coreset["diff_orig"] = coreset["diff"]
         coreset["diff"]      *= coreset["mean_dist"]
