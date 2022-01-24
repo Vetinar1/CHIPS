@@ -806,10 +806,12 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
     coreset_numpy = coreset[coord_list].to_numpy()
     points_numpy  = points[coord_list].to_numpy()
     tree = KDTree(points_numpy)
-    new_points = np.zeros_like(points_numpy)
+    new_points = np.zeros_like(coreset_numpy)
     new_points[:] = np.nan
 
+    c = 0   # counter variable; i is dataframe index, can not use it to index numpy array
     for i, row in coreset.iterrows():
+
         point = row[coord_list].to_numpy()
         simplex = build_simplex_adaptive(points_numpy, point, tree, k, factor, max_steps, n_jobs)
 
@@ -833,7 +835,8 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
             continue
 
         coreset.loc[i, "interpolated"] = interpolator(point)
-        new_points[i] = np.sum(simplex[coord_list]) / (D+1)
+        new_points[c] = np.sum(simplex[coord_list]) / (D+1)
+        c += 1
 
     coreset["diff"] = np.abs(coreset["values"] - coreset["interpolated"])
     if use_mdistance_weights:
@@ -854,9 +857,8 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
         coreset["diff"]      *= coreset["mean_dist"]
 
     # decide which new points to keep
-    indices = (coreset["diff"] > accuracy_threshold).index
-    new_points = pd.DataFrame(new_points[indices.to_numpy()], columns=coord_list)
-    new_points = new_points.dropna()
+    new_points = new_points[(coreset["diff"] > accuracy_threshold).to_numpy()]
+    new_points = pd.DataFrame(new_points, columns=coord_list)
 
     # write interpolation back from the core data set into the full data set
     points.loc[coreset.index, ["interpolated", "diff"]] = coreset.loc[:, ["interpolated", "diff"]]
