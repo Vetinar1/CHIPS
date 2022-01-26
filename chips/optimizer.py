@@ -57,6 +57,7 @@ def sample(
         psi_max_tries=4,
 
         use_mdistance_weights=True,
+        plot_mdistance_hists=True,
 
         max_iterations=20,
         max_storage_gb=10,
@@ -429,10 +430,12 @@ def sample(
             points, new_points = sample_step_delaunay(points, n_partitions, coord_list, core, corners, accuracy_threshold)
         elif mode == "PSI":
             points, new_points = sample_step_psi(points, coord_list, core, accuracy_threshold, psi_nearest_neighbors,
-                                                 psi_nn_factor, psi_max_tries, n_jobs, use_mdistance_weights)
+                                                 psi_nn_factor, psi_max_tries, n_jobs, use_mdistance_weights,
+                                                 plot_mdistance_hists)
         else:
             print("Invalid mode. Something went wrong.")
             exit()
+
         timeB = time.time()
 
         # Calculate some stats/diagnostics
@@ -484,6 +487,9 @@ def sample(
             filename=os.path.join(output_folder, f"iteration{iteration - 1}", f"it{iteration - 1}.points"),
             coord_list=coord_list
         )
+
+        if plot_mdistance_hists:
+            os.system(f"mv temphist.png {os.path.join(output_folder, f'mean_dist_hist{iteration - 1}')}.png")
 
         if cleanup:
             print("Performing cleanup, mode:", cleanup)
@@ -760,7 +766,8 @@ def sample_step_delaunay(points, n_partitions, coord_list, core, corners, accura
     return points, new_points
 
 
-def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps, n_jobs, use_mdistance_weights):
+def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max_steps, n_jobs, use_mdistance_weights,
+                    plot_mdistance_hists=False):
     """
     Do one sampling step using the PSI algorithm.
     https://arxiv.org/abs/2109.13926
@@ -840,7 +847,10 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
 
     coreset["diff"] = np.abs(coreset["values"] - coreset["interpolated"])
     if use_mdistance_weights:
-        _, neighbors = tree.query(coreset_numpy, k=11)
+        QUANTILE = 0.99
+        NEIGHBOR_COUNT = 10
+
+        _, neighbors = tree.query(coreset_numpy, k=NEIGHBOR_COUNT+1)
         neighbors = neighbors[:,1:]     # first nn is self
 
         for i in range(coreset_numpy.shape[0]):
@@ -851,14 +861,26 @@ def sample_step_psi(points, coord_list, core, accuracy_threshold, k, factor, max
             )
 
         # normalize values to around 1
-        normfactor = (coreset["mean_dist"].quantile(0.99) + coreset["mean_dist"].min()) / 2
-        coreset["mean_dist"] = coreset["mean_dist"] / normfactor
+        normfactor = (coreset["mean_dist"].quantile(QUANTILE) + coreset["mean_dist"].min()) / 2
         coreset["diff_orig"] = coreset["diff"]
         coreset["diff"]      *= coreset["mean_dist"]
 
+        if plot_mdistance_hists:
+            plt.hist(coreset["mean_dist"] / normfactor, histtype="step", label="Normed", color=(0, 0, 1, 0.5))
+            plt.hist(coreset["mean_dist"], histtype="step", label="Not normed", color=(1, 0, 0, 0.5))
+            plt.title(f"Mean distance to nearest {NEIGHBOR_COUNT} neighbors")
+            plt.gca().axvline(normfactor)
+            plt.gca().axvline(coreset["mean_dist"].min())
+            plt.gca().axvline(coreset["mean_dist"].quantile(QUANTILE))
+            plt.legend()
+            plt.savefig("temphist.png")
+            plt.close()
+
+        coreset["mean_dist"] = coreset["mean_dist"] / normfactor
+
     # decide which new points to keep
     new_points = new_points[(coreset["diff"] > accuracy_threshold).to_numpy()]
-    new_points = pd.DataFrame(new_points, columns=coord_list)
+    new_points = pd.DataFrame(new_points, columns=coord_list).dropna()
 
     # write interpolation back from the core data set into the full data set
     points.loc[coreset.index, ["interpolated", "diff"]] = coreset.loc[:, ["interpolated", "diff"]]
@@ -932,6 +954,7 @@ def _plot_parameter_space(points, new_points, coord_list, output_folder, suffix)
         height=6
     )
     grid.savefig(os.path.join(output_folder, "iteration{}.png".format(suffix)))
+    plt.close()
 
     points.drop("hue", axis=1, inplace=True)
     new_points.drop("hue", axis=1, inplace=True)
