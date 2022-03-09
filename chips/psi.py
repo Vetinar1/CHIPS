@@ -47,6 +47,7 @@ def build_simplex(neighbors, target, smart_nn=False):
                 diffvecs[i] = pneighbors[i] - ptarget
                 nn_candidates += 1
 
+            # TODO normalize?
             mean_vec = np.sum(diffvecs, axis=0) / nn_candidates
             dot_prods = np.dot(diffvecs, mean_vec)
             pnni = np.argmin(dot_prods)

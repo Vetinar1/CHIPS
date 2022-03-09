@@ -324,9 +324,20 @@ def sample(
         for dpath in existing_data:
             if os.path.isfile(dpath):
                 print("Attempting to read datafile", dpath)
+                indata = pd.read_csv(dpath, delimiter=sep)
+
+                if not "values" in indata.columns:
+                    print("\tNo 'values' column in provided file")
+                    print("\tAssuming values column is named 'Ctot'. Columns other than coords and Ctot will be dropped")
+                    indata["values"] = indata["Ctot"]
+                    indata = indata[coord_list + ["values"]]
+                else:
+                    print("\tDropping columns other than coords and 'values'")
+                    indata = indata[coord_list + ["values"]]
+
                 points = pd.concat((
                     points,
-                    pd.read_csv(dpath, delimiter=sep)
+                    indata
                 ))
 
             elif os.path.isdir(dpath):
@@ -341,6 +352,7 @@ def sample(
             points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
             points = points.reset_index(drop=True)
 
+        points = points.dropna()
         existing_point_count = len(points.index)
         print("Loaded", existing_point_count, " points")
 
@@ -374,24 +386,27 @@ def sample(
         it0folder,
         filename_pattern,
         corners,
+        coord_list,
         rad_bg,
         n_jobs,
         interp_column,
         use_net_cooling
     )
-    assert(not points.index.duplicated().any())
 
-    points.loc[points["values"].isna()]  = _cloudy_evaluate(
-        cloudy_input,
-        cloudy_source_path,
-        it0folder,
-        filename_pattern,
-        points.loc[points["values"].isna()],
-        rad_bg,
-        n_jobs,
-        interp_column,
-        use_net_cooling
-    )
+    if points[values].isnull().to_numpy().any():
+        points.loc[points["values"].isna()]  = _cloudy_evaluate(
+            cloudy_input,
+            cloudy_source_path,
+            it0folder,
+            filename_pattern,
+            points.loc[points["values"].isna()],
+            coord_list,
+            rad_bg,
+            n_jobs,
+            interp_column,
+            use_net_cooling
+        )
+        
     points = pd.concat((points, corners), ignore_index=True)
     points = points.drop_duplicates(subset=coord_list, keep="last", ignore_index=True)
 
@@ -403,7 +418,7 @@ def sample(
     if not use_net_cooling:
         try:
             assert (not points[values].isnull().to_numpy().any())
-        except:
+        except AssertionError:
             print(f"Warning: {len(points[points[values].isnull()].index)} of the initial values are NaN. Dropping.")
             points = points.dropna()
 
@@ -580,6 +595,7 @@ def sample(
             iteration_folder,
             filename_pattern,
             new_points.reset_index(drop=True),
+            coord_list,
             rad_bg,
             n_jobs,
             interp_column,
@@ -1394,6 +1410,7 @@ def _cloudy_evaluate(input_file,
                      output_folder,
                      filename_pattern,
                      points,
+                     coords,
                      rad_bg_function,
                      n_jobs,
                      column_index,
@@ -1406,6 +1423,7 @@ def _cloudy_evaluate(input_file,
     :param output_folder:       Folder to move files to after evaluation
     :param filename_pattern:    As in sample()
     :param points:              Dataframe; all points inside will be evaluated
+    :param coords:              List of coordinates
     :param rad_bg_function:     As returned from _get_rad_bg_as_function()
     :param column_index:        Index of the column to read values from
     :param use_net_cooling:     Instead of using column_index, read columns 2 and 3 and take the difference.
@@ -1424,6 +1442,13 @@ def _cloudy_evaluate(input_file,
     except:
         raise RuntimeError("Not all values in points dataframe passed to _cloudy_evaluate are nan. "
                            "Something has gone wrong, aborting.")
+
+    if points[coords].isnull().values.any():
+        len_before = len(points.index)
+        points = points.dropna(subset=coords)
+        len_after = len(points.index)
+        print(f"Dropped {len_before - len_after} nan values from points dataframe in _cloudy_evaluate")
+        # TODO I should really find the source of that bug and fix it
 
     for i in points.index:
         row = points.loc[i].to_dict()
