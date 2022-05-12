@@ -6,6 +6,8 @@ For more information on the cooling function and the goals of this package, refe
 
 CHIPS is meant to be used in conjunction with DIP: https://github.com/Vetinar1/DIP
 
+2022-01-17: The latest update now includes a `use_mdistance_weights` option when using PSI. This option is supposed to help deal with discontinuities in the cooling function which lead to oversampling. See documentation/docstring for more.
+
 ## How to install CHIPS
 
 To install CHIPS, either download this repository and move the `chips` folder into your project folder, or run the following command:
